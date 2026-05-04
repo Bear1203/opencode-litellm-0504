@@ -1,0 +1,14 @@
+# 使用者設定檔不該進 repo
+litellm.env
+*.env
+!*.env.example
+
+# Cache / log
+.cache/
+*.log
+
+# 編輯器
+.vscode/
+.idea/
+*.swp
+.DS_Store

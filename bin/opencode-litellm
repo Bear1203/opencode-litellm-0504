@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# opencode-litellm
+# 啟動 opencode,啟動前動態同步 LiteLLM 的可用模型清單。
+#
+# 用法:
+#   opencode-litellm                      # = opencode
+#   opencode-litellm run "hello"          # = opencode run "hello"
+#
+# 環境變數 (依優先序):
+#   1. 當前 shell export 的變數
+#   2. ~/.config/opencode/litellm.env    (key=value 格式, 自動載入)
+#   3. 腳本內預設值
+#
+# 必要:
+#   LITELLM_API_KEY        你的 LiteLLM API key
+#   LITELLM_BASE_URL       LiteLLM server URL (例如 https://litellm.example.com)
+#
+# 可選:
+#   LITELLM_PROVIDER_ID    (default litellm)
+#   LITELLM_PROVIDER_NAME  (default "LiteLLM")
+#   LITELLM_SYNC_SCRIPT    (default ~/.config/opencode/litellm-sync.sh)
+#   LITELLM_ENV_FILE       (default ~/.config/opencode/litellm.env)
+
+set -euo pipefail
+
+ENV_FILE="${LITELLM_ENV_FILE:-$HOME/.config/opencode/litellm.env}"
+SYNC_SCRIPT="${LITELLM_SYNC_SCRIPT:-$HOME/.config/opencode/litellm-sync.sh}"
+
+# --- 載入 .env ---------------------------------------------------------------
+# 只在使用者尚未自己 export 時才用 .env 的值 (current shell 優先)
+if [[ -f "$ENV_FILE" ]]; then
+  # shellcheck disable=SC1090
+  set -a
+  source "$ENV_FILE"
+  set +a
+fi
+
+# --- 檢查必要條件 ------------------------------------------------------------
+# 範本預設值,使用者忘了改也要擋下來
+PLACEHOLDER_KEY="sk-please-replace-me"
+PLACEHOLDER_URL="https://litellm.example.com"
+
+if [[ -z "${LITELLM_API_KEY:-}" || "${LITELLM_API_KEY}" == "$PLACEHOLDER_KEY" ]]; then
+  cat >&2 <<EOF
+[opencode-litellm] ERROR: LITELLM_API_KEY is not set or still the placeholder value.
+
+請選一種方式設定:
+  1. 編輯 $ENV_FILE 並填入 LITELLM_API_KEY=sk-...
+  2. 或在當前 shell 執行 export LITELLM_API_KEY=sk-...
+EOF
+  exit 1
+fi
+
+if [[ -z "${LITELLM_BASE_URL:-}" || "${LITELLM_BASE_URL}" == "$PLACEHOLDER_URL" ]]; then
+  cat >&2 <<EOF
+[opencode-litellm] ERROR: LITELLM_BASE_URL is not set or still the placeholder value.
+
+請選一種方式設定:
+  1. 編輯 $ENV_FILE 並填入 LITELLM_BASE_URL=https://your-litellm-host
+  2. 或在當前 shell 執行 export LITELLM_BASE_URL=https://your-litellm-host
+EOF
+  exit 1
+fi
+
+if [[ ! -x "$SYNC_SCRIPT" ]]; then
+  echo "[opencode-litellm] ERROR: sync script not found or not executable: $SYNC_SCRIPT" >&2
+  exit 1
+fi
+
+# --- 動態產生 inline config -------------------------------------------------
+# OPENCODE_CONFIG_CONTENT 會跟使用者 ~/.config/opencode/opencode.json 合併
+OPENCODE_CONFIG_CONTENT="$("$SYNC_SCRIPT")"
+export OPENCODE_CONFIG_CONTENT
+export LITELLM_API_KEY
+
+exec opencode "$@"
