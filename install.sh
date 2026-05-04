@@ -104,19 +104,40 @@ do_install() {
     yellow "================================================================"
   fi
 
-  # PATH 檢查
-  case ":$PATH:" in
-    *":$INSTALL_PREFIX:"*) ;;
-    *)
-      yellow ""
-      yellow "WARN: $INSTALL_PREFIX 不在 PATH 中,請加到 ~/.bashrc 或 ~/.zshrc:"
-      yellow "  export PATH=\"$INSTALL_PREFIX:\$PATH\""
-      ;;
-  esac
-
   green ""
   green "✓ 安裝完成 (version $VERSION)"
-  green "  使用: opencode-litellm"
+  green "  二進位路徑: $INSTALL_PREFIX/opencode-litellm"
+  green ""
+
+  # PATH 設定引導 (未包含時)
+  if [[ -n "${LITELLM_SKIP_PATH_PROMPT:-}" ]]; then
+    green "  使用: opencode-litellm"
+  else
+    local path_ok=false
+    case ":$PATH:" in
+      *":$INSTALL_PREFIX:"*) path_ok=true ;;
+    esac
+
+    if $path_ok; then
+      green "  使用: opencode-litellm"
+    else
+      yellow "=== 下一步: 把 $INSTALL_PREFIX 加入 PATH ==="
+      yellow ""
+      yellow "請根據你使用的 shell 執行以下指令:"
+      yellow ""
+      yellow "  Bash:  echo 'export PATH=\"$INSTALL_PREFIX:\$PATH\"' >> ~/.bashrc"
+      yellow "         source ~/.bashrc"
+      yellow ""
+      yellow "  Zsh:   echo 'export PATH=\"$INSTALL_PREFIX:\$PATH\"' >> ~/.zshrc"
+      yellow "         source ~/.zshrc"
+      yellow ""
+      yellow "或是現在直接執行 (僅當前 session 有效):"
+      yellow "  export PATH=\"$INSTALL_PREFIX:\$PATH\""
+      yellow ""
+      green "設定好 PATH 後，輸入 opencode-litellm 即可啟動。"
+      green "首次啟動時如果還沒設定 API key / URL，會引導你直接輸入。"
+    fi
+  fi
 }
 
 do_uninstall() {

@@ -40,6 +40,89 @@ fi
 PLACEHOLDER_KEY="sk-please-replace-me"
 PLACEHOLDER_URL="https://litellm.example.com"
 
+# 檢查是否需要互動式設定
+needs_interactive_setup=false
+
+if [[ -z "${LITELLM_API_KEY:-}" || "${LITELLM_API_KEY}" == "$PLACEHOLDER_KEY" ]]; then
+  needs_interactive_setup=true
+fi
+
+if [[ -z "${LITELLM_BASE_URL:-}" || "${LITELLM_BASE_URL}" == "$PLACEHOLDER_URL" ]]; then
+  needs_interactive_setup=true
+fi
+
+# 互動式設定:偵測到 placeholder 或空值時,引導使用者輸入並自動寫入 .env
+if $needs_interactive_setup; then
+  echo "[opencode-litellm] 尚未完成設定,請回答以下問題:"
+  echo ""
+
+  # 讀取 .env 中既有行號,用於原地替換
+  ensure_env_file() {
+    if [[ ! -f "$ENV_FILE" ]]; then
+      mkdir -p "$(dirname "$ENV_FILE")"
+      cat > "$ENV_FILE" <<'TEMPLATE'
+# opencode-litellm 設定檔
+LITELLM_API_KEY=sk-please-replace-me
+LITELLM_BASE_URL=https://litellm.example.com
+
+# === 可選 (取消註解才會覆寫預設) ===
+# LITELLM_PROVIDER_ID=litellm
+# LITELLM_PROVIDER_NAME=LiteLLM
+TEMPLATE
+      chmod 600 "$ENV_FILE"
+    fi
+  }
+
+  # 更新 .env 中的 KEY=VALUE 行 (支援已註解的列)
+  update_env_key() {
+    local key="$1" value="$2"
+    ensure_env_file
+    # 先嘗試替換未註解的行
+    if grep -q "^${key}=" "$ENV_FILE" 2>/dev/null; then
+      sed -i "s|^${key}=.*|${key}=${value}|" "$ENV_FILE"
+    elif grep -q "^# *${key}=" "$ENV_FILE" 2>/dev/null; then
+      # 替換已註解的行 → 取消註解並寫入新值
+      sed -i "s|^# *\(${key}=\).*|\1${value}|" "$ENV_FILE"
+    else
+      # 追加到檔案末尾
+      echo "${key}=${value}" >> "$ENV_FILE"
+    fi
+  }
+
+  if [[ -z "${LITELLM_API_KEY:-}" || "${LITELLM_API_KEY}" == "$PLACEHOLDER_KEY" ]]; then
+    echo -n "LITELLM_API_KEY (你的 LiteLLM API key): "
+    read -r input_key
+    if [[ -n "$input_key" ]]; then
+      update_env_key "LITELLM_API_KEY" "$input_key"
+      LITELLM_API_KEY="$input_key"
+      echo "  → 已儲存"
+    else
+      echo "[opencode-litellm] ERROR: LITELLM_API_KEY 不能為空"
+      exit 1
+    fi
+    echo ""
+  fi
+
+  if [[ -z "${LITELLM_BASE_URL:-}" || "${LITELLM_BASE_URL}" == "$PLACEHOLDER_URL" ]]; then
+    echo -n "LITELLM_BASE_URL (例如 https://litellm.your-company.internal): "
+    read -r input_url
+    if [[ -n "$input_url" ]]; then
+      # 移除結尾斜線 (避免 double-slash)
+      input_url="${input_url%/}"
+      update_env_key "LITELLM_BASE_URL" "$input_url"
+      LITELLM_BASE_URL="$input_url"
+      echo "  → 已儲存"
+    else
+      echo "[opencode-litellm] ERROR: LITELLM_BASE_URL 不能為空"
+      exit 1
+    fi
+    echo ""
+  fi
+
+  echo "[opencode-litellm] 設定已完成，繼續啟動..."
+  echo ""
+fi
+
 if [[ -z "${LITELLM_API_KEY:-}" || "${LITELLM_API_KEY}" == "$PLACEHOLDER_KEY" ]]; then
   cat >&2 <<EOF
 [opencode-litellm] ERROR: LITELLM_API_KEY is not set or still the placeholder value.
