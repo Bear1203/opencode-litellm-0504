@@ -1,16 +1,19 @@
 #!/usr/bin/env bash
 # litellm-sync.sh
-# 從 LiteLLM /v1/models 取得可用模型,輸出 OpenCode provider config (JSON to stdout)
-# 失敗時自動 fallback 到 cache。
 #
-# Env:
-#   LITELLM_BASE_URL   required (e.g. https://litellm.example.com)
-#   LITELLM_API_KEY    required (Bearer token)
-#   LITELLM_PROVIDER_ID default: litellm
-#   LITELLM_PROVIDER_NAME default: "LiteLLM"
-#   LITELLM_CACHE_FILE default: ~/.cache/opencode/litellm-models.json
-#   LITELLM_TIMEOUT    default: 5 (curl --max-time)
-#   LITELLM_LOG_FILE   default: ~/.cache/opencode/litellm-sync.log
+# 從 LiteLLM 取得可用模型清單,merge 到使用者的 opencode.json
+# (只更新 provider.<id> 區塊,其他設定原樣保留),並把 API token 寫入
+# 獨立檔案讓 opencode.json 用 {file:...} 引用。
+#
+# Env 變數:
+#   LITELLM_BASE_URL       (必填) LiteLLM server URL
+#   LITELLM_API_KEY        (必填) Bearer token
+#   LITELLM_PROVIDER_ID    (預設 litellm)
+#   LITELLM_PROVIDER_NAME  (預設 "LiteLLM")
+#   LITELLM_TIMEOUT        (預設 10) curl --max-time
+#   LITELLM_LOG_FILE       (預設 ~/.cache/opencode/litellm-sync.log)
+#   OPENCODE_CONFIG_FILE   (預設 ~/.config/opencode/opencode.json)
+#   LITELLM_KEY_FILE       (預設 ~/.config/opencode/litellm-key)
 
 set -euo pipefail
 
@@ -18,92 +21,128 @@ BASE_URL="${LITELLM_BASE_URL:-}"
 API_KEY="${LITELLM_API_KEY:-}"
 PROVIDER_ID="${LITELLM_PROVIDER_ID:-litellm}"
 PROVIDER_NAME="${LITELLM_PROVIDER_NAME:-LiteLLM}"
-CACHE_FILE="${LITELLM_CACHE_FILE:-$HOME/.cache/opencode/litellm-models.json}"
-TIMEOUT="${LITELLM_TIMEOUT:-5}"
+TIMEOUT="${LITELLM_TIMEOUT:-10}"
 LOG_FILE="${LITELLM_LOG_FILE:-$HOME/.cache/opencode/litellm-sync.log}"
+CONFIG_FILE="${OPENCODE_CONFIG_FILE:-$HOME/.config/opencode/opencode.json}"
+KEY_FILE="${LITELLM_KEY_FILE:-$HOME/.config/opencode/litellm-key}"
 
-mkdir -p "$(dirname "$CACHE_FILE")"
-mkdir -p "$(dirname "$LOG_FILE")"
+mkdir -p "$(dirname "$LOG_FILE")" "$(dirname "$CONFIG_FILE")" "$(dirname "$KEY_FILE")"
 
 log() {
   printf '[%s] [litellm-sync] %s\n' "$(date -Iseconds)" "$*" | tee -a "$LOG_FILE" >&2
 }
 
-if [[ -z "$BASE_URL" ]]; then
-  log "ERROR: LITELLM_BASE_URL not set"
+# --- 必要條件 ---------------------------------------------------------------
+[[ -n "$BASE_URL" ]] || { log "ERROR: LITELLM_BASE_URL 未設定"; exit 1; }
+[[ -n "$API_KEY"  ]] || { log "ERROR: LITELLM_API_KEY 未設定"; exit 1; }
+
+# --- 1. 取得模型清單 --------------------------------------------------------
+log "GET $BASE_URL/v1/models"
+RESP="$(curl -fsS --max-time "$TIMEOUT" \
+  -H "Authorization: Bearer $API_KEY" \
+  "$BASE_URL/v1/models" 2>/dev/null || true)"
+
+if [[ -z "$RESP" ]]; then
+  log "ERROR: API 沒有回應 (請檢查 LITELLM_BASE_URL / LITELLM_API_KEY 是否正確,以及網路連線)"
   exit 1
 fi
 
-if [[ -z "$API_KEY" ]]; then
-  log "WARN: LITELLM_API_KEY not set; trying cache only"
-fi
+# --- 2. 寫入 key 檔 ---------------------------------------------------------
+# opencode.json 用 {file:...} 引用,使用者直接打 opencode 也能拿到 token
+umask 077
+printf '%s' "$API_KEY" > "$KEY_FILE"
+chmod 600 "$KEY_FILE"
+log "API key 已寫入 $KEY_FILE (0600)"
 
-# 嘗試打 API,把 raw model id 列表存進 RAW_IDS_JSON (像 ["a","b",...])
-RAW_IDS_JSON=""
-if [[ -n "$API_KEY" ]]; then
-  RESP="$(curl -fsS --max-time "$TIMEOUT" \
-    -H "Authorization: Bearer $API_KEY" \
-    "$BASE_URL/v1/models" 2>/dev/null || true)"
+# --- 3. 解析模型清單並 merge 到 opencode.json -------------------------------
+# Python 區塊負責: 解析 API 回應 → 讀既有 config → merge → 原子寫入 → 印出模型數
+COUNT="$(
+  RESP="$RESP" \
+  PROVIDER_ID="$PROVIDER_ID" \
+  PROVIDER_NAME="$PROVIDER_NAME" \
+  BASE_URL="$BASE_URL" \
+  CONFIG_FILE="$CONFIG_FILE" \
+  KEY_FILE="$KEY_FILE" \
+  python3 <<'PY'
+import json, os, sys, tempfile
 
-  if [[ -n "$RESP" ]]; then
-    # 用 python3 解析 OpenAI 格式 {"data":[{"id":"..."}]}
-    RAW_IDS_JSON="$(printf '%s' "$RESP" | python3 -c '
-import sys, json
+# --- 解析 API 回應 ---
 try:
-    d = json.load(sys.stdin)
-    ids = sorted({m["id"] for m in d.get("data", []) if isinstance(m, dict) and "id" in m})
-    print(json.dumps(ids))
-except Exception:
-    pass
-' 2>/dev/null || true)"
-  fi
-fi
+    data = json.loads(os.environ["RESP"])
+    ids = sorted({
+        m["id"] for m in data.get("data", [])
+        if isinstance(m, dict) and isinstance(m.get("id"), str)
+    })
+except (json.JSONDecodeError, TypeError) as e:
+    sys.stderr.write(f"[litellm-sync] ERROR: 解析模型清單失敗: {e}\n")
+    sys.exit(1)
 
-# Fallback:打不通或解析失敗就用 cache
-if [[ -z "$RAW_IDS_JSON" || "$RAW_IDS_JSON" == "[]" ]]; then
-  if [[ -f "$CACHE_FILE" ]]; then
-    log "API unreachable, using cache: $CACHE_FILE"
-    RAW_IDS_JSON="$(cat "$CACHE_FILE")"
-  else
-    log "ERROR: API unreachable and no cache available; emitting empty model list"
-    RAW_IDS_JSON="[]"
-  fi
-else
-  # 成功:更新 cache
-  printf '%s' "$RAW_IDS_JSON" > "$CACHE_FILE"
-  COUNT="$(printf '%s' "$RAW_IDS_JSON" | python3 -c 'import sys,json;print(len(json.load(sys.stdin)))' 2>/dev/null || echo '?')"
-  log "Synced $COUNT models from $BASE_URL"
-fi
+if not ids:
+    sys.stderr.write("[litellm-sync] ERROR: 模型清單為空,放棄寫入\n")
+    sys.exit(1)
 
-# 把 model id 列表轉成 OpenCode 設定片段
-python3 - "$PROVIDER_ID" "$PROVIDER_NAME" "$BASE_URL" <<PY
-import sys, json, os
-ids_json = """$RAW_IDS_JSON"""
-provider_id, provider_name, base_url = sys.argv[1], sys.argv[2], sys.argv[3]
-try:
-    ids = json.loads(ids_json)
-except Exception:
-    ids = []
+provider_id   = os.environ["PROVIDER_ID"]
+provider_name = os.environ["PROVIDER_NAME"]
+base_url      = os.environ["BASE_URL"].rstrip("/")
+config_file   = os.environ["CONFIG_FILE"]
+key_file      = os.environ["KEY_FILE"]
 
-models = {}
-for mid in ids:
-    # 顯示名稱:把斜線後段拿來做友善名稱
-    short = mid.split("/", 1)[-1] if "/" in mid else mid
-    models[mid] = {"name": short}
+# 把家目錄下的 key file 路徑改寫成 ~/... 形式 (可讀性 & 可攜性)
+home = os.path.expanduser("~")
+key_ref = "~" + key_file[len(home):] if key_file.startswith(home + "/") else key_file
 
-cfg = {
-    "\$schema": "https://opencode.ai/config.json",
-    "provider": {
-        provider_id: {
-            "npm": "@ai-sdk/openai-compatible",
-            "name": provider_name,
-            "options": {
-                "baseURL": base_url.rstrip("/") + "/v1",
-                "apiKey": "{env:LITELLM_API_KEY}"
-            },
-            "models": models
-        }
-    }
+# --- 讀取既有 opencode.json (只 merge 不覆蓋) ---
+config = {}
+if os.path.exists(config_file):
+    try:
+        with open(config_file, encoding="utf-8") as f:
+            text = f.read().strip()
+        if text:
+            config = json.loads(text)
+            if not isinstance(config, dict):
+                sys.stderr.write(f"[litellm-sync] WARN: {config_file} 不是 JSON object,將整個重建\n")
+                config = {}
+    except json.JSONDecodeError as e:
+        sys.stderr.write(f"[litellm-sync] ERROR: {config_file} JSON 解析失敗: {e}\n")
+        sys.stderr.write("[litellm-sync]        為避免破壞既有設定,中止寫入。請修正或刪除該檔後再試。\n")
+        sys.exit(1)
+
+config.setdefault("$schema", "https://opencode.ai/config.json")
+
+# --- 組 provider.<id> 區塊 ---
+models = {mid: {"name": mid.split("/", 1)[-1] if "/" in mid else mid} for mid in ids}
+
+config.setdefault("provider", {})[provider_id] = {
+    "npm": "@ai-sdk/openai-compatible",
+    "name": provider_name,
+    "options": {
+        "baseURL": base_url + "/v1",
+        "apiKey": "{file:" + key_ref + "}",
+    },
+    "models": models,
 }
-print(json.dumps(cfg, indent=2, ensure_ascii=False))
+
+# --- 原子寫入 ---
+config_dir = os.path.dirname(config_file) or "."
+fd, tmp_path = tempfile.mkstemp(prefix=".opencode-", suffix=".json", dir=config_dir)
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(config, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+    os.replace(tmp_path, config_file)
+except Exception:
+    try: os.unlink(tmp_path)
+    except OSError: pass
+    raise
+
+# 印到 stdout,讓 bash 用 $(...) 接住
+print(len(models))
 PY
+)"
+
+if [[ -z "$COUNT" ]]; then
+  log "ERROR: sync 過程失敗 (詳情見上方訊息)"
+  exit 1
+fi
+
+log "已同步 $COUNT 個模型 → $CONFIG_FILE (provider.$PROVIDER_ID)"
