@@ -25,6 +25,8 @@ CONFIG_FILE="${OPENCODE_CONFIG_FILE:-$HOME/.config/opencode/opencode.json}"
 KEY_FILE="${LITELLM_KEY_FILE:-$HOME/.config/opencode/litellm-key}"
 
 # 載入 .env (current shell 的 export 優先,.env 用作 fallback)
+# 注意: 本工具新版設計把 LITELLM_API_KEY 從 env 拿掉,只存 KEY_FILE。
+# 但仍兼容舊版 env 內含 LITELLM_API_KEY 的情況 (見 migrate_env_key_to_file)。
 if [[ -f "$ENV_FILE" ]]; then
   # shellcheck disable=SC1090
   set -a; source "$ENV_FILE"; set +a
@@ -32,6 +34,13 @@ fi
 
 PROVIDER_ID="${LITELLM_PROVIDER_ID:-litellm}"
 PROVIDER_NAME="${LITELLM_PROVIDER_NAME:-$DEFAULT_PROVIDER_NAME}"
+
+# 若 env 沒給 KEY (新版設計),從 KEY_FILE 載入到記憶體變數
+# 這個變數只存活在當前 process 中,不會被寫回任何檔
+if [[ -z "${LITELLM_API_KEY:-}" && -f "$KEY_FILE" ]]; then
+  LITELLM_API_KEY="$(cat "$KEY_FILE" 2>/dev/null || true)"
+  export LITELLM_API_KEY
+fi
 
 # ============================================================================
 # 輸出工具 (統一訊息風格)
@@ -49,7 +58,10 @@ ensure_env_file() {
   mkdir -p "$(dirname "$ENV_FILE")"
   cat > "$ENV_FILE" <<'TEMPLATE'
 # opencode-litellm 設定檔 (KEY=VALUE,不要寫 shell 語法)
-LITELLM_API_KEY=sk-please-replace-me
+#
+# API key 不存在這裡,只存在 ~/.config/opencode/litellm-key (mode 600)。
+# 改 key 請執行: opencode-litellm config
+
 LITELLM_BASE_URL=https://litellm.example.com
 
 # === 可選 ===
@@ -58,6 +70,38 @@ LITELLM_PROVIDER_NAME=LiteLLM
 # LITELLM_TIMEOUT=10
 TEMPLATE
   chmod 600 "$ENV_FILE"
+}
+
+# 把 token 寫進 KEY_FILE (mode 600,原子寫入)
+write_key_file() {
+  local value="$1" tmp
+  mkdir -p "$(dirname "$KEY_FILE")"
+  tmp="$(mktemp "${KEY_FILE}.XXXXXX")"
+  (umask 077; printf '%s' "$value" > "$tmp")
+  chmod 600 "$tmp"
+  mv -f "$tmp" "$KEY_FILE"
+}
+
+# 從舊版 env 把 LITELLM_API_KEY 搬到 KEY_FILE 並從 env 移除
+# 條件: env 裡有非 placeholder 的 KEY,而且 KEY_FILE 不存在或為空
+migrate_env_key_to_file() {
+  [[ -f "$ENV_FILE" ]] || return 0
+  # env 必須真的有 LITELLM_API_KEY= 這行 (避免只是當前 shell 有 export)
+  grep -q '^LITELLM_API_KEY=' "$ENV_FILE" 2>/dev/null || return 0
+  local env_key
+  env_key="$(grep -E '^LITELLM_API_KEY=' "$ENV_FILE" | head -n1 | sed 's/^LITELLM_API_KEY=//')"
+  [[ -z "$env_key" || "$env_key" == "$PLACEHOLDER_KEY" ]] && return 0
+
+  # 若 KEY_FILE 已有內容就尊重它,不用 env 蓋過去 (但仍要清掉 env 的 KEY 行)
+  if [[ ! -s "$KEY_FILE" ]]; then
+    info "偵測到舊版設定: 將 API key 從 $ENV_FILE 搬到 $KEY_FILE (更安全)"
+    write_key_file "$env_key"
+  else
+    info "偵測到舊版設定: $ENV_FILE 含 LITELLM_API_KEY,將其移除 (KEY_FILE 已有 token)"
+  fi
+  # 把 env 內的 LITELLM_API_KEY=... 行刪掉
+  sed -i '/^LITELLM_API_KEY=/d' "$ENV_FILE"
+  ok "遷移完成,API key 現在只存在 $KEY_FILE"
 }
 
 # 寫入或更新 .env 中的 KEY=VALUE (支援取消註解)
@@ -142,9 +186,10 @@ prompt_api_key() {
       warn "不能為空,請重新輸入 (或 Ctrl+C 中止)"
       continue
     fi
-    update_env_key "LITELLM_API_KEY" "$input"
+    write_key_file "$input"
     LITELLM_API_KEY="$input"
-    ok "已儲存 LITELLM_API_KEY"
+    export LITELLM_API_KEY
+    ok "已儲存 LITELLM_API_KEY → $KEY_FILE (mode 600)"
     return 0
   done
 }
@@ -255,7 +300,18 @@ run_doctor() {
 
   printf '  litellm.env         : '
   if [[ -f "$ENV_FILE" ]]; then
-    echo "✓ $ENV_FILE"
+    local env_mode
+    env_mode="$(stat -c '%a' "$ENV_FILE" 2>/dev/null || echo '?')"
+    if [[ "$env_mode" == "600" ]]; then
+      echo "✓ $ENV_FILE (mode 600)"
+    else
+      echo "⚠ $ENV_FILE (mode $env_mode,建議 chmod 600)"
+    fi
+    # 額外檢查: 新版設計 env 不該含 LITELLM_API_KEY
+    if grep -q '^LITELLM_API_KEY=' "$ENV_FILE" 2>/dev/null; then
+      printf '%-22s    ' '  └─'
+      echo "⚠ 偵測到 LITELLM_API_KEY 寫在 env 裡 (跑 'opencode-litellm config' 會自動搬到 $KEY_FILE)"
+    fi
   elif api_key_is_set && base_url_is_set; then
     echo "ℹ 不存在 (但 shell 中已 export 變數,可運作)"
   else
@@ -347,9 +403,9 @@ opencode-litellm v$VERSION
   --version     顯示版本
 
 設定檔:
-  $ENV_FILE       (LITELLM_API_KEY / LITELLM_BASE_URL)
-  $CONFIG_FILE  (opencode 主設定,含 provider.$PROVIDER_ID)
-  $KEY_FILE     (純 token,opencode.json 用 {file:...} 引用,mode 600)
+  $ENV_FILE       (LITELLM_BASE_URL / LITELLM_PROVIDER_NAME 等非機密設定)
+  $KEY_FILE       (純 API token,opencode.json 用 {file:...} 引用,mode 600)
+  $CONFIG_FILE    (opencode 主設定,含 provider.$PROVIDER_ID)
 
 詳細文件: https://github.com/Bear1203/opencode-litellm-0504
 EOF
@@ -358,6 +414,14 @@ EOF
 # ============================================================================
 # 主流程
 # ============================================================================
+
+# 舊版 → 新版資料遷移 (env 內含 LITELLM_API_KEY 時搬到 KEY_FILE)
+# help / version 不需要動到設定,可略過
+case "${1:-}" in
+  -h|--help|help|--version|version) ;;
+  *) migrate_env_key_to_file ;;
+esac
+
 case "${1:-}" in
   sync)                shift; run_sync;   exit $? ;;
   config|configure)    shift; run_config; exit $? ;;

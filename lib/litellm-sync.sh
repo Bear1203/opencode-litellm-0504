@@ -32,9 +32,14 @@ log() {
   printf '[%s] [litellm-sync] %s\n' "$(date -Iseconds)" "$*" | tee -a "$LOG_FILE" >&2
 }
 
+# 若環境變數沒給 API key,從 KEY_FILE 讀 (新版設計: token 只存 KEY_FILE)
+if [[ -z "$API_KEY" && -f "$KEY_FILE" ]]; then
+  API_KEY="$(cat "$KEY_FILE" 2>/dev/null || true)"
+fi
+
 # --- 必要條件 ---------------------------------------------------------------
 [[ -n "$BASE_URL" ]] || { log "ERROR: LITELLM_BASE_URL 未設定"; exit 1; }
-[[ -n "$API_KEY"  ]] || { log "ERROR: LITELLM_API_KEY 未設定"; exit 1; }
+[[ -n "$API_KEY"  ]] || { log "ERROR: LITELLM_API_KEY 未設定 (env 變數或 $KEY_FILE 都沒有)"; exit 1; }
 
 # --- 1. 取得模型清單 --------------------------------------------------------
 log "GET $BASE_URL/v1/models"
