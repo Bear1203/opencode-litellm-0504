@@ -36,7 +36,11 @@ opencode
 
 - Windows 10 / 11
 - PowerShell 5.1+ (Windows 內建) 或 PowerShell 7
-- [opencode](https://opencode.ai) — 安裝程式偵測不到時會問你是否自動安裝(預設 Y)
+- [opencode](https://opencode.ai) — 偵測不到時 install.ps1 會問你要不要從 [GitHub Releases](https://github.com/anomalyco/opencode/releases) 自動下載 zip 解壓到 `%USERPROFILE%\.opencode\bin`。
+  也可改用以下任一方式自行安裝:
+  - `scoop install opencode`
+  - `choco install opencode`
+  - `npm install -g opencode-ai`
 
 ---
 

@@ -357,7 +357,7 @@ function Run-Doctor {
     Write-Host -NoNewline '  opencode 指令       : '
     $oc = Get-Command 'opencode' -ErrorAction SilentlyContinue
     if ($oc) { Write-Host "OK $($oc.Source)" -ForegroundColor Green }
-    else     { Write-Host 'MISSING 找不到 (irm https://opencode.ai/install.ps1 | iex)' -ForegroundColor Red; $issues++ }
+    else     { Write-Host 'MISSING 找不到 (scoop install opencode / choco install opencode / npm install -g opencode-ai)' -ForegroundColor Red; $issues++ }
 
     Write-Host -NoNewline '  litellm-sync.ps1    : '
     if (Test-Path -LiteralPath $SyncScript) { Write-Host "OK $SyncScript" -ForegroundColor Green }
@@ -493,11 +493,13 @@ if (-not (Get-Command 'opencode' -ErrorAction SilentlyContinue)) {
 [opencode-litellm] ERROR: 找不到 opencode 指令。
 
 可能原因 / 解法:
-  1. 還沒安裝 opencode
-       irm https://opencode.ai/install.ps1 | iex
-  2. 已安裝但不在 PATH (預設裝到 %USERPROFILE%\.opencode\bin)
-       將 %USERPROFILE%\.opencode\bin 加入使用者 PATH
-       然後重新開啟 Terminal
+  1. 還沒安裝 opencode (任選一種方式)
+       scoop install opencode
+       choco install opencode
+       npm install -g opencode-ai
+       或從 https://github.com/anomalyco/opencode/releases 下載 opencode-windows-x64.zip
+  2. 已安裝但不在 PATH (本工具自動安裝時會放到 %USERPROFILE%\.opencode\bin)
+       將該資料夾加入使用者 PATH 後重新開啟 Terminal
 
 模型清單與 token 已寫入,opencode 上線後即可直接使用,不必再跑此 wrapper。
 "@ -ForegroundColor Red

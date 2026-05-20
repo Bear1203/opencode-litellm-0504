@@ -174,41 +174,115 @@ public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, UIntPtr wP
     Write-Ok "已將 $Dir 寫入 User PATH"
 }
 
-# 自動安裝 opencode (官方 install script)
+# 判斷 CPU 架構,回傳對應 release asset 名稱
+function Get-OpencodeAssetName {
+    $arch = $env:PROCESSOR_ARCHITECTURE
+    if ($env:PROCESSOR_ARCHITEW6432) { $arch = $env:PROCESSOR_ARCHITEW6432 }
+    switch -Regex ($arch) {
+        'ARM64' { return 'opencode-windows-arm64.zip' }
+        'AMD64|x86_64' { return 'opencode-windows-x64.zip' }
+        default {
+            Write-Warn2 "未知架構 $arch,預設使用 x64"
+            return 'opencode-windows-x64.zip'
+        }
+    }
+}
+
+# 從 GitHub Releases 抓最新 release 的 tag (例: v1.15.5)
+function Get-LatestOpencodeTag {
+    $api = 'https://api.github.com/repos/anomalyco/opencode/releases/latest'
+    try {
+        # GitHub API 要求 User-Agent
+        $rel = Invoke-RestMethod -Uri $api -Headers @{ 'User-Agent' = 'opencode-litellm-installer' } -ErrorAction Stop
+        return $rel.tag_name
+    } catch {
+        throw "無法查詢 opencode 最新版本 ($api): $($_.Exception.Message)"
+    }
+}
+
+# 自動安裝 opencode (從 GitHub Releases 下載 zip 解壓)
+# 官方沒有提供 install.ps1,只能透過套件管理器 (scoop/choco/npm) 或下載 zip
 function Install-Opencode {
     Write-Warn2 '找不到 opencode 指令。'
+    Write-Info '官方提供的 Windows 安裝方式: scoop / choco / npm / 下載 zip。'
 
     $answer = 'Y'
     if ([Environment]::UserInteractive -and -not [Console]::IsInputRedirected) {
-        $reply = Read-Host '是否要自動安裝 opencode? [Y/n]'
+        $reply = Read-Host '是否要自動從 GitHub Releases 下載 opencode 安裝到 %USERPROFILE%\.opencode\bin? [Y/n]'
         if ($reply) { $answer = $reply }
     } else {
-        Write-Info '非互動模式,預設自動安裝 opencode'
+        Write-Info '非互動模式,預設自動下載安裝 opencode'
     }
 
     if ($answer -match '^[Nn]') {
-        Write-Warn2 '略過 opencode 安裝。請日後自行至 https://opencode.ai 安裝。'
+        Write-Warn2 '略過 opencode 安裝。可用以下任一方式手動安裝:'
+        Write-Warn2 '  scoop install opencode'
+        Write-Warn2 '  choco install opencode'
+        Write-Warn2 '  npm install -g opencode-ai'
+        Write-Warn2 '  或從 https://github.com/anomalyco/opencode/releases 下載 opencode-windows-*.zip'
         return
     }
 
-    Write-Info '下載並執行 opencode 官方 PowerShell 安裝腳本: https://opencode.ai/install.ps1'
+    $tag = $null
     try {
-        Invoke-Expression (Invoke-RestMethod -Uri 'https://opencode.ai/install.ps1' -UseBasicParsing)
+        $tag = Get-LatestOpencodeTag
+        Write-Info "最新版本: $tag"
     } catch {
-        Write-Err "opencode 安裝失敗: $($_.Exception.Message)"
-        Write-Err '請手動安裝: https://opencode.ai'
+        Write-Err $_.Exception.Message
+        Write-Err '請手動安裝: https://github.com/anomalyco/opencode/releases'
         return
     }
 
-    # 官方 Windows 預設裝到 %USERPROFILE%\.opencode\bin\opencode.exe (與 Linux 對齊)
+    $assetName = Get-OpencodeAssetName
+    $downloadUrl = "https://github.com/anomalyco/opencode/releases/download/$tag/$assetName"
     $opencodeBin = Join-Path $env:USERPROFILE '.opencode\bin'
+
+    Write-Info "下載 $downloadUrl"
+    $tmpZip = Join-Path $env:TEMP "opencode-$([guid]::NewGuid().ToString('N')).zip"
+    try {
+        # 大檔下載 -ProgressPreference SilentlyContinue 可顯著加速
+        $prev = $ProgressPreference
+        $ProgressPreference = 'SilentlyContinue'
+        try {
+            Invoke-WebRequest -Uri $downloadUrl -OutFile $tmpZip -UseBasicParsing -ErrorAction Stop
+        } finally {
+            $ProgressPreference = $prev
+        }
+    } catch {
+        Write-Err "下載失敗: $($_.Exception.Message)"
+        Write-Err "  URL: $downloadUrl"
+        if (Test-Path -LiteralPath $tmpZip) { Remove-Item -LiteralPath $tmpZip -Force -ErrorAction SilentlyContinue }
+        return
+    }
+
+    if (-not (Test-Path -LiteralPath $opencodeBin)) {
+        New-Item -ItemType Directory -Path $opencodeBin -Force | Out-Null
+    }
+
+    Write-Info "解壓到 $opencodeBin"
+    try {
+        Expand-Archive -LiteralPath $tmpZip -DestinationPath $opencodeBin -Force -ErrorAction Stop
+    } catch {
+        Write-Err "解壓失敗: $($_.Exception.Message)"
+        return
+    } finally {
+        Remove-Item -LiteralPath $tmpZip -Force -ErrorAction SilentlyContinue
+    }
+
     $opencodeExe = Join-Path $opencodeBin 'opencode.exe'
     if (Test-Path -LiteralPath $opencodeExe) {
         Add-ToUserPath -Dir $opencodeBin
         Write-Ok "✓ opencode 已安裝: $opencodeExe"
     } else {
-        Write-Warn2 "opencode 已安裝,但找不到預期路徑 $opencodeExe"
-        Write-Warn2 '請確認安裝位置並自行加入 PATH'
+        # 部分 release 可能多套一層資料夾
+        $nested = Get-ChildItem -LiteralPath $opencodeBin -Recurse -Filter 'opencode.exe' -File -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($nested) {
+            $opencodeBin = Split-Path -Parent $nested.FullName
+            Add-ToUserPath -Dir $opencodeBin
+            Write-Ok "✓ opencode 已安裝: $($nested.FullName)"
+        } else {
+            Write-Warn2 "解壓後找不到 opencode.exe,請檢查 $opencodeBin"
+        }
     }
 }
 
