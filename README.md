@@ -28,7 +28,7 @@ opencode
 
 > 如果你的 PowerShell 執行原則阻擋了腳本,可先在當前 session 放寬:
 > `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`
-> 再執行上面的 `irm ... | iex`。安裝後產生的 `opencode-litellm.cmd` shim 內部會自動帶 `-ExecutionPolicy Bypass`,因此後續執行不會再受限。
+> 再執行上面的 `irm ... | iex`。安裝後 PATH 上只暴露 `opencode-litellm.cmd`(內部自帶 `-ExecutionPolicy Bypass`),所以日常使用不會受 ExecutionPolicy 影響。
 
 ---
 
@@ -87,13 +87,18 @@ opencode TUI 內也可以直接呼叫:
 
 | 用途 | 路徑 |
 |---|---|
-| 程式本體 | `%LOCALAPPDATA%\opencode-litellm\bin\opencode-litellm.ps1`<br>`%LOCALAPPDATA%\opencode-litellm\bin\opencode-litellm.cmd` (shim) |
+| 指令進入點 (PATH 上) | `%LOCALAPPDATA%\opencode-litellm\bin\opencode-litellm.cmd` |
+| 主程式 | `%LOCALAPPDATA%\opencode-litellm\lib\opencode-litellm.ps1` |
 | Sync 腳本 | `%LOCALAPPDATA%\opencode-litellm\lib\litellm-sync.ps1` |
+| 桌面雙擊啟動器 | `%USERPROFILE%\Desktop\opencode-litellm.bat` (含 `pause`) |
 | 設定檔 (非機密) | `%APPDATA%\opencode\litellm.env` |
 | API token | `%APPDATA%\opencode\litellm-key` (僅本人可讀) |
 | opencode 主設定 | `%APPDATA%\opencode\opencode.json` |
 | Sync log | `%LOCALAPPDATA%\opencode\litellm-sync.log` |
 | Slash commands | `%APPDATA%\opencode\commands\litellm-{sync,doctor}.md` |
+
+> 主程式 `.ps1` 故意不放在 `bin`,避免 PowerShell 因 `$PATHEXT` 優先匹配 `.ps1` 而觸發 ExecutionPolicy 錯誤。
+> PATH 上只暴露 `.cmd`,任何 shell 直接打 `opencode-litellm` 都會走 `.cmd` → 自動帶 `-ExecutionPolicy Bypass`。
 
 ---
 
@@ -152,7 +157,7 @@ irm https://raw.githubusercontent.com/Bear1203/opencode-litellm-0504/main/instal
 |---|---|
 | `opencode-litellm` 無法辨識 | User PATH 未生效;**關閉所有 terminal 重新開啟**,或手動把 `%LOCALAPPDATA%\opencode-litellm\bin` 加入 User PATH |
 | `opencode` 無法辨識 | opencode 沒裝 / 不在 PATH;`opencode-litellm doctor` 會給安裝指令 |
-| `無法載入檔案 ... 因為這個系統上已停用指令碼執行` | 用 `opencode-litellm.cmd` shim 啟動 (預設安裝後就是這個);或執行 `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned` |
+| `無法載入檔案 ... 因為這個系統上已停用指令碼執行` | 你直接點到了 `.ps1`。改打 `opencode-litellm` (走 PATH 上的 `.cmd` shim) 或雙擊桌面的 `opencode-litellm.bat`;或執行 `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned` |
 | 401 / 403 / 模型清單空 | 跑 `opencode-litellm config` 修正 key 或 URL |
 | 模型清單舊了想刷新 | `opencode-litellm sync` |
 | `opencode.json` 解析失敗 | 為避免破壞既有設定 sync 會中止,請修正或刪除該檔後重試 |

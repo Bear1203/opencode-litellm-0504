@@ -291,10 +291,11 @@ function Do-Install {
     }
 
     Write-Info '安裝目標:'
-    Write-Info "  bin       -> $BinDir\opencode-litellm.ps1 (+ opencode-litellm.cmd)"
-    Write-Info "  lib       -> $LibDir\litellm-sync.ps1"
+    Write-Info "  bin       -> $BinDir\opencode-litellm.cmd"
+    Write-Info "  lib       -> $LibDir\opencode-litellm.ps1, litellm-sync.ps1"
     Write-Info "  env       -> $EnvFile"
     Write-Info "  commands  -> $CommandsDir\litellm-{sync,doctor}.md"
+    Write-Info "  desktop   -> opencode-litellm.bat (雙擊啟動器)"
 
     foreach ($d in @($BinDir, $LibDir, $ConfigDir, $CommandsDir, $CacheDir)) {
         if (-not (Test-Path -LiteralPath $d)) {
@@ -302,18 +303,45 @@ function Do-Install {
         }
     }
 
-    Fetch-File -RelPath 'bin/opencode-litellm.ps1'              -Dest (Join-Path $BinDir 'opencode-litellm.ps1')
+    # 主程式 .ps1 放 lib (不放 bin),避免 PATHEXT 讓 PowerShell 優先匹配到 .ps1 而觸發 ExecutionPolicy
+    Fetch-File -RelPath 'bin/opencode-litellm.ps1'              -Dest (Join-Path $LibDir 'opencode-litellm.ps1')
     Fetch-File -RelPath 'lib/litellm-sync.ps1'                  -Dest (Join-Path $LibDir 'litellm-sync.ps1')
     Fetch-File -RelPath 'config/commands/litellm-sync.md'       -Dest (Join-Path $CommandsDir 'litellm-sync.md')
     Fetch-File -RelPath 'config/commands/litellm-doctor.md'     -Dest (Join-Path $CommandsDir 'litellm-doctor.md')
 
-    # 建立 .cmd shim,讓 cmd / 任何 shell 都能直接打 opencode-litellm
+    # 清掉舊版裝在 bin 的 .ps1 (升級時避免 PATHEXT 問題復發)
+    $oldPs1 = Join-Path $BinDir 'opencode-litellm.ps1'
+    if (Test-Path -LiteralPath $oldPs1) {
+        Remove-Item -LiteralPath $oldPs1 -Force -ErrorAction SilentlyContinue
+    }
+
+    # 建立 .cmd shim 在 bin (PATH 上只看到 .cmd,PowerShell / cmd 都能直接打 opencode-litellm)
     $cmdShim = Join-Path $BinDir 'opencode-litellm.cmd'
-    $shimContent = @'
+    $shimContent = @"
 @echo off
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0opencode-litellm.ps1" %*
-'@
+powershell -NoProfile -ExecutionPolicy Bypass -File "$LibDir\opencode-litellm.ps1" %*
+"@
     Set-Content -LiteralPath $cmdShim -Value $shimContent -Encoding ASCII
+
+    # 額外在桌面建立雙擊啟動器 (含 pause,給滑鼠雙擊用)
+    # 已存在就不覆蓋,避免洗掉使用者自己的修改
+    $desktopDir = [Environment]::GetFolderPath('Desktop')
+    if ($desktopDir -and (Test-Path -LiteralPath $desktopDir)) {
+        $desktopBat = Join-Path $desktopDir 'opencode-litellm.bat'
+        if (-not (Test-Path -LiteralPath $desktopBat)) {
+            $batContent = @"
+@echo off
+REM opencode-litellm 雙擊啟動器
+REM 跑完不會自動關閉,可看到訊息
+powershell -NoProfile -ExecutionPolicy Bypass -File "$LibDir\opencode-litellm.ps1" %*
+pause
+"@
+            Set-Content -LiteralPath $desktopBat -Value $batContent -Encoding ASCII
+            Write-Info "已建立桌面雙擊啟動器: $desktopBat"
+        } else {
+            Write-Info "保留既有桌面啟動器: $desktopBat"
+        }
+    }
 
     # env 檔: 已存在就不覆蓋,避免洗掉使用者填好的 key;不存在則用範本建立
     if (Test-Path -LiteralPath $EnvFile) {
@@ -361,13 +389,18 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0opencode-litellm.ps1" 
 function Do-Uninstall {
     param([switch]$DoPurge)
 
+    $desktopDir = [Environment]::GetFolderPath('Desktop')
     $files = @(
-        (Join-Path $BinDir 'opencode-litellm.ps1'),
+        (Join-Path $BinDir 'opencode-litellm.ps1'),      # 舊版位置 (升級殘留)
         (Join-Path $BinDir 'opencode-litellm.cmd'),
+        (Join-Path $LibDir 'opencode-litellm.ps1'),
         (Join-Path $LibDir 'litellm-sync.ps1'),
         (Join-Path $CommandsDir 'litellm-sync.md'),
         (Join-Path $CommandsDir 'litellm-doctor.md')
     )
+    if ($desktopDir) {
+        $files += (Join-Path $desktopDir 'opencode-litellm.bat')
+    }
     foreach ($f in $files) {
         if (Test-Path -LiteralPath $f) {
             Write-Info "移除 $f"

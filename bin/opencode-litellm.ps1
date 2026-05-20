@@ -31,9 +31,13 @@ $EnvFile     = if ($env:LITELLM_ENV_FILE)    { $env:LITELLM_ENV_FILE }    else {
 $ConfigFile  = if ($env:OPENCODE_CONFIG_FILE){ $env:OPENCODE_CONFIG_FILE } else { Join-Path $ConfigDir 'opencode.json' }
 $KeyFile     = if ($env:LITELLM_KEY_FILE)    { $env:LITELLM_KEY_FILE }    else { Join-Path $ConfigDir 'litellm-key' }
 
-# Sync 腳本: 跟自己同一個安裝樹下的 lib 資料夾
+# Sync 腳本: 預設跟本檔同一個 lib 資料夾 (新版安裝後 .ps1 與 sync 都在 lib)
+# 為相容舊版 (主程式裝在 bin),也試 ../lib
 $ScriptDir   = Split-Path -Parent $MyInvocation.MyCommand.Definition
-$DefaultSync = Join-Path (Split-Path -Parent $ScriptDir) 'lib\litellm-sync.ps1'
+$DefaultSync = Join-Path $ScriptDir 'litellm-sync.ps1'
+if (-not (Test-Path -LiteralPath $DefaultSync)) {
+    $DefaultSync = Join-Path (Split-Path -Parent $ScriptDir) 'lib\litellm-sync.ps1'
+}
 $SyncScript  = if ($env:LITELLM_SYNC_SCRIPT) { $env:LITELLM_SYNC_SCRIPT } else { $DefaultSync }
 
 # ============================================================================
