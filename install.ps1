@@ -201,27 +201,10 @@ function Get-LatestOpencodeTag {
 }
 
 # 自動安裝 opencode (從 GitHub Releases 下載 zip 解壓)
-# 官方沒有提供 install.ps1,只能透過套件管理器 (scoop/choco/npm) 或下載 zip
+# 官方沒有提供 install.ps1,改成直接抓 zip 解壓 + 寫 PATH
 function Install-Opencode {
-    Write-Warn2 '找不到 opencode 指令。'
-    Write-Info '官方提供的 Windows 安裝方式: scoop / choco / npm / 下載 zip。'
-
-    $answer = 'Y'
-    if ([Environment]::UserInteractive -and -not [Console]::IsInputRedirected) {
-        $reply = Read-Host '是否要自動從 GitHub Releases 下載 opencode 安裝到 %USERPROFILE%\.opencode\bin? [Y/n]'
-        if ($reply) { $answer = $reply }
-    } else {
-        Write-Info '非互動模式,預設自動下載安裝 opencode'
-    }
-
-    if ($answer -match '^[Nn]') {
-        Write-Warn2 '略過 opencode 安裝。可用以下任一方式手動安裝:'
-        Write-Warn2 '  scoop install opencode'
-        Write-Warn2 '  choco install opencode'
-        Write-Warn2 '  npm install -g opencode-ai'
-        Write-Warn2 '  或從 https://github.com/anomalyco/opencode/releases 下載 opencode-windows-*.zip'
-        return
-    }
+    Write-Info '找不到 opencode 指令,將自動從 GitHub Releases 下載安裝...'
+    Write-Info '  目標路徑: %USERPROFILE%\.opencode\bin'
 
     $tag = $null
     try {
