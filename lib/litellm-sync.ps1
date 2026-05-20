@@ -1,4 +1,4 @@
-# litellm-sync.ps1
+﻿# litellm-sync.ps1
 #
 # 從 LiteLLM 取得可用模型清單,merge 到使用者的 opencode.json
 # (只更新 provider.<id> 區塊,其他設定原樣保留),並把 API token 寫入

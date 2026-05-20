@@ -1,4 +1,4 @@
-# opencode-litellm installer (Windows / PowerShell)
+﻿# opencode-litellm installer (Windows / PowerShell)
 #
 # 一般使用 (PowerShell):
 #   irm https://raw.githubusercontent.com/Bear1203/opencode-litellm-0504/main/install.ps1 | iex
@@ -103,6 +103,8 @@ function Require-Command {
 }
 
 # 下載 / 複製檔案
+# .ps1 / .md 強制存成 UTF-8 with BOM (PowerShell 5.1 預設用系統 ANSI/Big5
+# 讀無 BOM 的 .ps1,中文字會變亂碼破壞語法)
 function Fetch-File {
     param(
         [string]$RelPath,
@@ -112,13 +114,35 @@ function Fetch-File {
     if (-not (Test-Path -LiteralPath $destDir)) {
         New-Item -ItemType Directory -Path $destDir -Force | Out-Null
     }
+
     if ($LocalSrc) {
         $src = Join-Path $LocalSrc $RelPath
-        Copy-Item -LiteralPath $src -Destination $Dest -Force
+        $bytes = [System.IO.File]::ReadAllBytes($src)
     } else {
         $url = "$RepoRawBase/$RelPath"
-        Invoke-WebRequest -Uri $url -OutFile $Dest -UseBasicParsing
+        $resp = Invoke-WebRequest -Uri $url -UseBasicParsing
+        $bytes = $resp.Content
+        if ($bytes -is [string]) {
+            # PowerShell 7 的 Invoke-WebRequest 對文字回應會回 string,轉回 bytes
+            $bytes = [System.Text.Encoding]::UTF8.GetBytes($bytes)
+        }
     }
+
+    # 對 .ps1 / .md / .env / .json 等文字檔: 確保有 UTF-8 BOM
+    $textExt = @('.ps1', '.psm1', '.md', '.env', '.json', '.txt', '.example')
+    $ext = [System.IO.Path]::GetExtension($Dest).ToLower()
+    $name = [System.IO.Path]::GetFileName($Dest).ToLower()
+    $isText = ($textExt -contains $ext) -or ($name -like '*.env*')
+
+    if ($isText -and $bytes.Length -ge 1) {
+        $hasBom = $bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF
+        if (-not $hasBom) {
+            $bom = [byte[]](0xEF, 0xBB, 0xBF)
+            $bytes = $bom + $bytes
+        }
+    }
+
+    [System.IO.File]::WriteAllBytes($Dest, $bytes)
 }
 
 # 把目錄加進 User PATH (重複時跳過)

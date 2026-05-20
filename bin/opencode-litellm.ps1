@@ -1,4 +1,4 @@
-# opencode-litellm — 把 LiteLLM 模型清單整合進 opencode (Windows / PowerShell)
+﻿# opencode-litellm — 把 LiteLLM 模型清單整合進 opencode (Windows / PowerShell)
 #
 # 用法 (詳見 -Help):
 #   opencode-litellm                啟動 opencode (首次會引導設定 + 同步模型)
