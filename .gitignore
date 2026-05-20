@@ -12,3 +12,5 @@ litellm.env
 .idea/
 *.swp
 .DS_Store
+Thumbs.db
+desktop.ini
