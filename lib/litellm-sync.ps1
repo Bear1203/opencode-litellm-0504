@@ -147,8 +147,8 @@ $provider = $config.provider
 
 $modelsObj = [PSCustomObject]@{}
 foreach ($mid in $modelIds) {
-    $displayName = if ($mid.Contains('/')) { $mid.Substring($mid.IndexOf('/') + 1) } else { $mid }
-    Set-Prop -Obj $modelsObj -Name $mid -Value ([PSCustomObject]@{ name = $displayName })
+    # 模型清單顯示名稱直接用 LiteLLM 回的原始 id,不做任何裁切
+    Set-Prop -Obj $modelsObj -Name $mid -Value ([PSCustomObject]@{ name = $mid })
 }
 
 # key file 路徑改寫成 ~ 開頭 (opencode 支援的相對路徑)
