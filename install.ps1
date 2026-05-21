@@ -1,20 +1,16 @@
 ﻿# opencode-litellm installer (Windows / PowerShell)
 #
-# 一般使用 (PowerShell):
+# 一般使用:
 #   irm https://raw.githubusercontent.com/Bear1203/opencode-litellm-0504/main/install.ps1 | iex
 #
-# 帶參數 (irm | iex 不能直接帶參數,改用下載後執行):
-#   & ([scriptblock]::Create((irm https://.../install.ps1))) -Uninstall
-#   或
-#   irm https://.../install.ps1 -OutFile install.ps1 ; .\install.ps1 -Uninstall
-#
-# 旗標:
-#   -Uninstall     移除已安裝檔案 (保留 litellm.env / litellm-key)
-#   -Purge         連同 litellm.env / litellm-key / log 一起刪除
-#   -Prefix DIR    覆寫 bin 安裝路徑 (預設 %LOCALAPPDATA%\opencode-litellm)
-#   -Repo URL      覆寫下載來源 (預設使用 GitHub raw)
-#   -LocalSrc DIR  從本機目錄安裝 (開發 / 測試用,跳過下載)
-#   -Help          顯示說明
+# 帶旗標 (irm | iex 不能直接帶參數,要先下載再執行):
+#   irm <url>/install.ps1 -OutFile install.ps1
+#   .\install.ps1 -Uninstall     # 移除 (保留 litellm.env / litellm-key)
+#   .\install.ps1 -Purge         # 連同 env / key / log 一起刪除
+#   .\install.ps1 -Prefix DIR    # 覆寫安裝路徑 (預設 %LOCALAPPDATA%\opencode-litellm)
+#   .\install.ps1 -Repo URL      # 覆寫下載來源
+#   .\install.ps1 -LocalSrc DIR  # 從本機目錄安裝 (開發用,跳過下載)
+#   .\install.ps1 -Help
 
 [CmdletBinding()]
 param(
@@ -28,36 +24,24 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# ============================================================================
-# 設定區: 預設下載來源
-# 使用者可用 -Repo 旗標或 OPENCODE_LITELLM_REPO 環境變數覆寫
-# ============================================================================
 $DefaultRepo = 'https://raw.githubusercontent.com/Bear1203/opencode-litellm-0504/main'
 $RepoRawBase = if ($Repo) { $Repo } elseif ($env:OPENCODE_LITELLM_REPO) { $env:OPENCODE_LITELLM_REPO } else { $DefaultRepo }
 $Version = '0.1.0'
 
-# ============================================================================
-# 路徑慣例 (Windows)
+# 路徑 (Windows 標準位置)
 #   bin / lib    %LOCALAPPDATA%\opencode-litellm\{bin,lib}
 #   config       %APPDATA%\opencode\
 #   cache / log  %LOCALAPPDATA%\opencode\
-# ============================================================================
-if (-not $Prefix) {
-    $Prefix = Join-Path $env:LOCALAPPDATA 'opencode-litellm'
-}
-$BinDir     = Join-Path $Prefix 'bin'
-$LibDir     = Join-Path $Prefix 'lib'
-$ConfigDir  = Join-Path $env:APPDATA 'opencode'
-$CommandsDir= Join-Path $ConfigDir 'commands'
-$CacheDir   = Join-Path $env:LOCALAPPDATA 'opencode'
-$EnvFile    = Join-Path $ConfigDir 'litellm.env'
+if (-not $Prefix) { $Prefix = Join-Path $env:LOCALAPPDATA 'opencode-litellm' }
+$BinDir      = Join-Path $Prefix 'bin'
+$LibDir      = Join-Path $Prefix 'lib'
+$ConfigDir   = Join-Path $env:APPDATA 'opencode'
+$CommandsDir = Join-Path $ConfigDir 'commands'
+$CacheDir    = Join-Path $env:LOCALAPPDATA 'opencode'
+$EnvFile     = Join-Path $ConfigDir 'litellm.env'
 
-# 紀錄安裝流程中是否曾修改 User PATH,用於最後統一提示重開 terminal
 $script:PathModified = $false
 
-# ============================================================================
-# 輸出工具
-# ============================================================================
 function Write-Info  { param([string]$Msg) Write-Host "[install] $Msg" }
 function Write-Ok    { param([string]$Msg) Write-Host $Msg -ForegroundColor Green }
 function Write-Warn2 { param([string]$Msg) Write-Host $Msg -ForegroundColor Yellow }
@@ -75,60 +59,40 @@ opencode-litellm installer (Windows / PowerShell)
   .\install.ps1                # 安裝
   .\install.ps1 -Uninstall     # 移除程式檔 (保留 env / key)
   .\install.ps1 -Purge         # 連同 env / key / log 一起移除
-  .\install.ps1 -Prefix DIR    # 覆寫安裝路徑 (預設 %LOCALAPPDATA%\opencode-litellm)
+  .\install.ps1 -Prefix DIR    # 覆寫安裝路徑
   .\install.ps1 -Repo URL      # 覆寫下載來源
   .\install.ps1 -LocalSrc DIR  # 從本機目錄安裝 (開發用)
-  .\install.ps1 -Help          # 顯示本說明
+  .\install.ps1 -Help
 "@
 }
 
 if ($Help) { Show-Help; return }
 
-# ============================================================================
-# 工具函式
-# ============================================================================
 function Test-Command {
     param([string]$Name)
     [bool](Get-Command $Name -ErrorAction SilentlyContinue)
 }
 
-function Require-Command {
-    param([string[]]$Names)
-    foreach ($n in $Names) {
-        if (-not (Test-Command $n)) {
-            Write-Err "缺少必要指令: $n"
-            throw "Missing dependency: $n"
-        }
-    }
-}
-
-# 下載 / 複製檔案
-# .ps1 / .md 強制存成 UTF-8 with BOM (PowerShell 5.1 預設用系統 ANSI/Big5
-# 讀無 BOM 的 .ps1,中文字會變亂碼破壞語法)
+# 下載 / 複製檔案。文字檔強制以 UTF-8 with BOM 寫入,
+# 避免 PowerShell 5.1 讀無 BOM 的 .ps1 時把中文當系統 ANSI (Big5) 亂碼。
 function Fetch-File {
-    param(
-        [string]$RelPath,
-        [string]$Dest
-    )
+    param([string]$RelPath, [string]$Dest)
+
     $destDir = Split-Path -Parent $Dest
     if (-not (Test-Path -LiteralPath $destDir)) {
         New-Item -ItemType Directory -Path $destDir -Force | Out-Null
     }
 
     if ($LocalSrc) {
-        $src = Join-Path $LocalSrc $RelPath
-        $bytes = [System.IO.File]::ReadAllBytes($src)
+        $bytes = [System.IO.File]::ReadAllBytes((Join-Path $LocalSrc $RelPath))
     } else {
-        $url = "$RepoRawBase/$RelPath"
-        $resp = Invoke-WebRequest -Uri $url -UseBasicParsing
+        $resp = Invoke-WebRequest -Uri "$RepoRawBase/$RelPath" -UseBasicParsing
         $bytes = $resp.Content
         if ($bytes -is [string]) {
-            # PowerShell 7 的 Invoke-WebRequest 對文字回應會回 string,轉回 bytes
             $bytes = [System.Text.Encoding]::UTF8.GetBytes($bytes)
         }
     }
 
-    # 對 .ps1 / .md / .env / .json 等文字檔: 確保有 UTF-8 BOM
     $textExt = @('.ps1', '.psm1', '.md', '.env', '.json', '.txt', '.example')
     $ext = [System.IO.Path]::GetExtension($Dest).ToLower()
     $name = [System.IO.Path]::GetFileName($Dest).ToLower()
@@ -145,36 +109,31 @@ function Fetch-File {
     [System.IO.File]::WriteAllBytes($Dest, $bytes)
 }
 
-# 把目錄加進 User PATH (重複時跳過)
-# 直接寫 registry 以保留 REG_EXPAND_SZ 型別 (避免 %USERPROFILE% 等被展開後寫死)
+# 把目錄加進 User PATH。直接寫 registry 以保留 REG_EXPAND_SZ 型別。
 function Add-ToUserPath {
     param([string]$Dir)
 
     $regKey = 'HKCU:\Environment'
     $current = ''
     try {
-        $item = Get-ItemProperty -Path $regKey -Name 'Path' -ErrorAction Stop
-        $current = $item.Path
+        $current = (Get-ItemProperty -Path $regKey -Name 'Path' -ErrorAction Stop).Path
     } catch {
         $current = ''
     }
 
-    $parts = @()
-    if ($current) { $parts = $current.Split(';') | Where-Object { $_ } }
+    $parts = if ($current) { $current.Split(';') | Where-Object { $_ } } else { @() }
     foreach ($p in $parts) {
         if ([string]::Equals($p.TrimEnd('\'), $Dir.TrimEnd('\'), [StringComparison]::OrdinalIgnoreCase)) {
-            Write-Info "PATH 已含 $Dir,跳過寫入 User PATH"
+            Write-Info "PATH 已含 $Dir,跳過"
             return
         }
     }
 
     $newPath = if ($current) { "$current;$Dir" } else { $Dir }
-
-    # 用 REG_EXPAND_SZ 保留 %VAR% 形式
     $regType = if ($current -match '%[^%]+%') { 'ExpandString' } else { 'String' }
     Set-ItemProperty -Path $regKey -Name 'Path' -Value $newPath -Type $regType
 
-    # 通知系統環境變數已變更 (新開的 process 才會抓到,但讓 Explorer 等也立刻知道)
+    # 通知 Explorer 等程式環境變數已更新
     try {
         $sig = @'
 [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
@@ -182,72 +141,40 @@ public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, UIntPtr wP
 '@
         $native = Add-Type -MemberDefinition $sig -Name 'NativeMethods' -Namespace 'Win32Helper' -PassThru -ErrorAction SilentlyContinue
         if ($native) {
-            $HWND_BROADCAST = [IntPtr]0xffff
-            $WM_SETTINGCHANGE = 0x1A
-            $SMTO_ABORTIFHUNG = 0x2
             $result = [UIntPtr]::Zero
-            [void]$native::SendMessageTimeout($HWND_BROADCAST, $WM_SETTINGCHANGE, [UIntPtr]::Zero, 'Environment', $SMTO_ABORTIFHUNG, 5000, [ref]$result)
+            [void]$native::SendMessageTimeout([IntPtr]0xffff, 0x1A, [UIntPtr]::Zero, 'Environment', 0x2, 5000, [ref]$result)
         }
-    } catch {
-        # 廣播失敗不影響安裝結果
-    }
+    } catch { }
 
-    # 當前 session 也立即生效
     $env:PATH = "$env:PATH;$Dir"
     $script:PathModified = $true
     Write-Ok "已將 $Dir 寫入 User PATH"
 }
 
-# 判斷 CPU 架構,回傳對應 release asset 名稱
-function Get-OpencodeAssetName {
-    $arch = $env:PROCESSOR_ARCHITECTURE
-    if ($env:PROCESSOR_ARCHITEW6432) { $arch = $env:PROCESSOR_ARCHITEW6432 }
-    switch -Regex ($arch) {
-        'ARM64' { return 'opencode-windows-arm64.zip' }
-        'AMD64|x86_64' { return 'opencode-windows-x64.zip' }
-        default {
-            Write-Warn2 "未知架構 $arch,預設使用 x64"
-            return 'opencode-windows-x64.zip'
-        }
-    }
-}
-
-# 從 GitHub Releases 抓最新 release 的 tag (例: v1.15.5)
-function Get-LatestOpencodeTag {
-    $api = 'https://api.github.com/repos/anomalyco/opencode/releases/latest'
-    try {
-        # GitHub API 要求 User-Agent
-        $rel = Invoke-RestMethod -Uri $api -Headers @{ 'User-Agent' = 'opencode-litellm-installer' } -ErrorAction Stop
-        return $rel.tag_name
-    } catch {
-        throw "無法查詢 opencode 最新版本 ($api): $($_.Exception.Message)"
-    }
-}
-
 # 自動安裝 opencode (從 GitHub Releases 下載 zip 解壓)
-# 官方沒有提供 install.ps1,改成直接抓 zip 解壓 + 寫 PATH
 function Install-Opencode {
     Write-Info '找不到 opencode 指令,將自動從 GitHub Releases 下載安裝...'
-    Write-Info '  目標路徑: %USERPROFILE%\.opencode\bin'
 
-    $tag = $null
+    $arch = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
+    $assetName = if ($arch -match 'ARM64') { 'opencode-windows-arm64.zip' } else { 'opencode-windows-x64.zip' }
+
     try {
-        $tag = Get-LatestOpencodeTag
+        $rel = Invoke-RestMethod -Uri 'https://api.github.com/repos/anomalyco/opencode/releases/latest' `
+            -Headers @{ 'User-Agent' = 'opencode-litellm-installer' } -ErrorAction Stop
+        $tag = $rel.tag_name
         Write-Info "最新版本: $tag"
     } catch {
-        Write-Err $_.Exception.Message
+        Write-Err "無法查詢 opencode 最新版本: $($_.Exception.Message)"
         Write-Err '請手動安裝: https://github.com/anomalyco/opencode/releases'
         return
     }
 
-    $assetName = Get-OpencodeAssetName
     $downloadUrl = "https://github.com/anomalyco/opencode/releases/download/$tag/$assetName"
     $opencodeBin = Join-Path $env:USERPROFILE '.opencode\bin'
+    $tmpZip = Join-Path $env:TEMP "opencode-$([guid]::NewGuid().ToString('N')).zip"
 
     Write-Info "下載 $downloadUrl"
-    $tmpZip = Join-Path $env:TEMP "opencode-$([guid]::NewGuid().ToString('N')).zip"
     try {
-        # 大檔下載 -ProgressPreference SilentlyContinue 可顯著加速
         $prev = $ProgressPreference
         $ProgressPreference = 'SilentlyContinue'
         try {
@@ -257,7 +184,6 @@ function Install-Opencode {
         }
     } catch {
         Write-Err "下載失敗: $($_.Exception.Message)"
-        Write-Err "  URL: $downloadUrl"
         if (Test-Path -LiteralPath $tmpZip) { Remove-Item -LiteralPath $tmpZip -Force -ErrorAction SilentlyContinue }
         return
     }
@@ -277,28 +203,22 @@ function Install-Opencode {
     }
 
     $opencodeExe = Join-Path $opencodeBin 'opencode.exe'
-    if (Test-Path -LiteralPath $opencodeExe) {
-        Add-ToUserPath -Dir $opencodeBin
-        Write-Ok "✓ opencode 已安裝: $opencodeExe"
-    } else {
+    if (-not (Test-Path -LiteralPath $opencodeExe)) {
         # 部分 release 可能多套一層資料夾
         $nested = Get-ChildItem -LiteralPath $opencodeBin -Recurse -Filter 'opencode.exe' -File -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($nested) {
             $opencodeBin = Split-Path -Parent $nested.FullName
-            Add-ToUserPath -Dir $opencodeBin
-            Write-Ok "✓ opencode 已安裝: $($nested.FullName)"
+            $opencodeExe = $nested.FullName
         } else {
             Write-Warn2 "解壓後找不到 opencode.exe,請檢查 $opencodeBin"
+            return
         }
     }
+    Add-ToUserPath -Dir $opencodeBin
+    Write-Ok "opencode 已安裝: $opencodeExe"
 }
 
-# ============================================================================
-# 主要動作
-# ============================================================================
 function Do-Install {
-    # PowerShell 內建 Invoke-WebRequest / ConvertFrom-Json,所以不需要 python / curl
-    # 只檢查必須的 PowerShell 版本
     if ($PSVersionTable.PSVersion.Major -lt 5) {
         Write-Err "需要 PowerShell 5.1 或更新版本 (目前: $($PSVersionTable.PSVersion))"
         throw 'Unsupported PowerShell version'
@@ -319,7 +239,7 @@ function Do-Install {
     Write-Info "  lib       -> $LibDir\opencode-litellm.ps1, litellm-sync.ps1"
     Write-Info "  env       -> $EnvFile"
     Write-Info "  commands  -> $CommandsDir\litellm-{sync,doctor}.md"
-    Write-Info "  desktop   -> opencode-litellm.bat (雙擊啟動器)"
+    Write-Info "  desktop   -> opencode-litellm.bat (設定精靈 / 健檢)"
 
     foreach ($d in @($BinDir, $LibDir, $ConfigDir, $CommandsDir, $CacheDir)) {
         if (-not (Test-Path -LiteralPath $d)) {
@@ -327,19 +247,13 @@ function Do-Install {
         }
     }
 
-    # 主程式 .ps1 放 lib (不放 bin),避免 PATHEXT 讓 PowerShell 優先匹配到 .ps1 而觸發 ExecutionPolicy
-    Fetch-File -RelPath 'bin/opencode-litellm.ps1'              -Dest (Join-Path $LibDir 'opencode-litellm.ps1')
-    Fetch-File -RelPath 'lib/litellm-sync.ps1'                  -Dest (Join-Path $LibDir 'litellm-sync.ps1')
-    Fetch-File -RelPath 'config/commands/litellm-sync.md'       -Dest (Join-Path $CommandsDir 'litellm-sync.md')
-    Fetch-File -RelPath 'config/commands/litellm-doctor.md'     -Dest (Join-Path $CommandsDir 'litellm-doctor.md')
+    # 主程式 .ps1 放 lib (不放 bin) 避免 PATHEXT 讓 PowerShell 優先匹配到 .ps1 而觸發 ExecutionPolicy
+    Fetch-File -RelPath 'bin/opencode-litellm.ps1'          -Dest (Join-Path $LibDir 'opencode-litellm.ps1')
+    Fetch-File -RelPath 'lib/litellm-sync.ps1'              -Dest (Join-Path $LibDir 'litellm-sync.ps1')
+    Fetch-File -RelPath 'config/commands/litellm-sync.md'   -Dest (Join-Path $CommandsDir 'litellm-sync.md')
+    Fetch-File -RelPath 'config/commands/litellm-doctor.md' -Dest (Join-Path $CommandsDir 'litellm-doctor.md')
 
-    # 清掉舊版裝在 bin 的 .ps1 (升級時避免 PATHEXT 問題復發)
-    $oldPs1 = Join-Path $BinDir 'opencode-litellm.ps1'
-    if (Test-Path -LiteralPath $oldPs1) {
-        Remove-Item -LiteralPath $oldPs1 -Force -ErrorAction SilentlyContinue
-    }
-
-    # 建立 .cmd shim 在 bin (PATH 上只看到 .cmd,PowerShell / cmd 都能直接打 opencode-litellm)
+    # .cmd shim 在 bin (PATH 上只看到 .cmd,任何 shell 直接打 opencode-litellm)
     $cmdShim = Join-Path $BinDir 'opencode-litellm.cmd'
     $shimContent = @"
 @echo off
@@ -347,67 +261,88 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "$LibDir\opencode-litellm.ps
 "@
     Set-Content -LiteralPath $cmdShim -Value $shimContent -Encoding ASCII
 
-    # 額外在桌面建立雙擊啟動器 (含 pause,給滑鼠雙擊用)
-    # 已存在就不覆蓋,避免洗掉使用者自己的修改
+    # 桌面「設定精靈 / 健檢」雙擊啟動器
+    #   - 沒設定過 -> 跑 config 引導輸入
+    #   - 已設定過 -> 跑 doctor 顯示狀態
+    #   - 結束後 pause,讓視窗停住給使用者看結果
+    # 註解全英文 + 內容純 ASCII,避免 cmd.exe 在 cp950 下亂碼;
+    # chcp 65001 切 console code page 讓子行程 (PowerShell) 印中文正常顯示。
     $desktopDir = [Environment]::GetFolderPath('Desktop')
     if ($desktopDir -and (Test-Path -LiteralPath $desktopDir)) {
         $desktopBat = Join-Path $desktopDir 'opencode-litellm.bat'
         if (-not (Test-Path -LiteralPath $desktopBat)) {
-            $batContent = @"
-@echo off
-REM opencode-litellm 雙擊啟動器
-REM 跑完不會自動關閉,可看到訊息
-powershell -NoProfile -ExecutionPolicy Bypass -File "$LibDir\opencode-litellm.ps1" %*
-pause
-"@
-            Set-Content -LiteralPath $desktopBat -Value $batContent -Encoding ASCII
-            Write-Info "已建立桌面雙擊啟動器: $desktopBat"
+            $keyFile = Join-Path $ConfigDir 'litellm-key'
+            $batLines = @(
+                '@echo off',
+                'REM opencode-litellm desktop launcher (setup wizard / health check).',
+                'REM Double-click to configure on first run, or to verify your setup later.',
+                'REM To actually USE opencode, open a Terminal and just type: opencode',
+                '',
+                'chcp 65001 >nul',
+                '',
+                "set ""LITELLM_PS1=$LibDir\opencode-litellm.ps1""",
+                "set ""LITELLM_KEY_FILE=$keyFile""",
+                '',
+                'if not exist "%LITELLM_PS1%" (',
+                '    echo [opencode-litellm] ERROR: cannot find "%LITELLM_PS1%"',
+                '    echo Please reinstall:',
+                '    echo   irm https://raw.githubusercontent.com/Bear1203/opencode-litellm-0504/main/install.ps1 ^| iex',
+                '    pause',
+                '    exit /b 1',
+                ')',
+                '',
+                'if exist "%LITELLM_KEY_FILE%" (',
+                '    echo [opencode-litellm] Existing setup detected, running doctor...',
+                '    powershell -NoProfile -ExecutionPolicy Bypass -File "%LITELLM_PS1%" doctor',
+                ') else (',
+                '    echo [opencode-litellm] First-time setup, running config wizard...',
+                '    powershell -NoProfile -ExecutionPolicy Bypass -File "%LITELLM_PS1%" config',
+                ')',
+                '',
+                'echo.',
+                'echo --------------------------------------------------------------',
+                'echo  Done. To start opencode, open a Terminal and run:  opencode',
+                'echo --------------------------------------------------------------',
+                'pause'
+            )
+            Set-Content -LiteralPath $desktopBat -Value $batLines -Encoding ASCII
+            Write-Info "已建立桌面設定精靈: $desktopBat"
         } else {
             Write-Info "保留既有桌面啟動器: $desktopBat"
         }
     }
 
-    # env 檔: 已存在就不覆蓋,避免洗掉使用者填好的 key;不存在則用範本建立
+    # env 檔: 已存在就不覆蓋
     if (Test-Path -LiteralPath $EnvFile) {
         Write-Info "保留既有 $EnvFile"
     } else {
         Fetch-File -RelPath 'config/litellm.env.example' -Dest $EnvFile
     }
 
-    Write-Host ''
-    Write-Ok "✓ 安裝完成 (version $Version)"
-    Write-Ok "  二進位路徑: $BinDir\opencode-litellm.cmd"
-    Write-Host ''
-
-    # PATH 設定:自動寫入 User PATH
     Add-ToUserPath -Dir $BinDir
 
+    Write-Host ''
+    Write-Ok "安裝完成 (version $Version)"
+    Write-Ok "  進入點: $BinDir\opencode-litellm.cmd"
+    Write-Host ''
+
     if ($script:PathModified) {
-        Write-Warn2 ''
         Write-Warn2 '================================================================'
         Write-Warn2 '  下一步: 請開啟新的 PowerShell / Terminal 視窗 (PATH 已更新)'
         Write-Warn2 '================================================================'
-        Write-Warn2 ''
-        Write-Warn2 '  目前這個 session 的 PATH 已暫時更新,但要讓所有新視窗都生效,'
-        Write-Warn2 '  建議關閉本視窗並重新開啟 Terminal / PowerShell。'
-        Write-Warn2 ''
+        Write-Host ''
     }
 
-    Write-Ok '================================================================'
-    Write-Ok '  接下來'
-    Write-Ok '================================================================'
-    Write-Ok ''
-    Write-Ok '  1) 首次啟動 (會引導你輸入 LiteLLM API key 和 URL):'
+    Write-Ok '接下來:'
+    Write-Ok '  1) 首次啟動 (會引導輸入 LiteLLM API key 和 URL):'
     Write-Ok '       opencode-litellm'
-    Write-Ok ''
-    Write-Ok '  2) 完成後可直接使用 opencode (模型清單與 token 已寫入 config):'
+    Write-Ok '  2) 完成後可直接使用 opencode:'
     Write-Ok '       opencode'
     Write-Ok ''
     Write-Ok '  其他常用指令:'
     Write-Ok '       opencode-litellm sync       # 重新同步模型清單'
     Write-Ok '       opencode-litellm config     # 修改 API key / URL'
-    Write-Ok '       opencode-litellm doctor     # 檢查當前環境設定狀態'
-    Write-Ok ''
+    Write-Ok '       opencode-litellm doctor     # 檢查環境狀態'
 }
 
 function Do-Uninstall {
@@ -415,16 +350,14 @@ function Do-Uninstall {
 
     $desktopDir = [Environment]::GetFolderPath('Desktop')
     $files = @(
-        (Join-Path $BinDir 'opencode-litellm.ps1'),      # 舊版位置 (升級殘留)
         (Join-Path $BinDir 'opencode-litellm.cmd'),
         (Join-Path $LibDir 'opencode-litellm.ps1'),
         (Join-Path $LibDir 'litellm-sync.ps1'),
         (Join-Path $CommandsDir 'litellm-sync.md'),
         (Join-Path $CommandsDir 'litellm-doctor.md')
     )
-    if ($desktopDir) {
-        $files += (Join-Path $desktopDir 'opencode-litellm.bat')
-    }
+    if ($desktopDir) { $files += (Join-Path $desktopDir 'opencode-litellm.bat') }
+
     foreach ($f in $files) {
         if (Test-Path -LiteralPath $f) {
             Write-Info "移除 $f"
@@ -432,7 +365,6 @@ function Do-Uninstall {
         }
     }
 
-    # 嘗試清空空資料夾 (bin/lib/Prefix)
     foreach ($d in @($BinDir, $LibDir, $Prefix)) {
         if ((Test-Path -LiteralPath $d) -and -not (Get-ChildItem -LiteralPath $d -Force)) {
             Remove-Item -LiteralPath $d -Force
@@ -446,17 +378,14 @@ function Do-Uninstall {
         foreach ($f in @($EnvFile, $keyFile, $logFile)) {
             if (Test-Path -LiteralPath $f) { Remove-Item -LiteralPath $f -Force }
         }
-        Write-Warn2 "保留 $ConfigDir\opencode.json 不動 (內含使用者其他 provider / 設定)。"
+        Write-Warn2 "保留 $ConfigDir\opencode.json 不動 (內含使用者其他設定)。"
         Write-Warn2 '若要清除 provider.litellm 區塊請手動編輯該檔。'
     } else {
         Write-Info '保留設定 / token / log (用 -Purge 可一併刪除)'
     }
-    Write-Ok '✓ 已移除'
+    Write-Ok '已移除'
 }
 
-# ============================================================================
-# Dispatch
-# ============================================================================
 if ($Purge) {
     Do-Uninstall -DoPurge
 } elseif ($Uninstall) {

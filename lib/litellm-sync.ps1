@@ -1,27 +1,23 @@
 ﻿# litellm-sync.ps1
 #
-# 從 LiteLLM 取得可用模型清單,merge 到使用者的 opencode.json
-# (只更新 provider.<id> 區塊,其他設定原樣保留),並把 API token 寫入
-# 獨立檔案讓 opencode.json 用 {file:...} 引用。
+# 從 LiteLLM 取得可用模型清單,merge 到使用者的 opencode.json,
+# 並把 API token 寫入獨立檔案讓 opencode.json 用 {file:...} 引用。
 #
-# Env 變數:
+# 讀取的環境變數:
 #   LITELLM_BASE_URL       (必填) LiteLLM server URL
-#   LITELLM_API_KEY        (必填) Bearer token (或從 LITELLM_KEY_FILE 讀)
+#   LITELLM_API_KEY        (必填) Bearer token,沒給就讀 LITELLM_KEY_FILE
 #   LITELLM_PROVIDER_ID    (預設 litellm)
 #   LITELLM_PROVIDER_NAME  (預設 LiteLLM)
-#   LITELLM_TIMEOUT        (預設 10) HTTP timeout (秒)
-#   LITELLM_LOG_FILE       (預設 %LOCALAPPDATA%\opencode\litellm-sync.log)
+#   LITELLM_TIMEOUT        (預設 10) HTTP timeout 秒數
 #   OPENCODE_CONFIG_FILE   (預設 %APPDATA%\opencode\opencode.json)
 #   LITELLM_KEY_FILE       (預設 %APPDATA%\opencode\litellm-key)
+#   LITELLM_LOG_FILE       (預設 %LOCALAPPDATA%\opencode\litellm-sync.log)
 
 [CmdletBinding()]
 param()
 
 $ErrorActionPreference = 'Stop'
 
-# ============================================================================
-# 解析環境變數
-# ============================================================================
 $BaseUrl      = if ($env:LITELLM_BASE_URL)     { $env:LITELLM_BASE_URL }     else { '' }
 $ApiKey       = if ($env:LITELLM_API_KEY)      { $env:LITELLM_API_KEY }      else { '' }
 $ProviderId   = if ($env:LITELLM_PROVIDER_ID)  { $env:LITELLM_PROVIDER_ID }  else { 'litellm' }
@@ -45,9 +41,7 @@ function Write-Log {
     [Console]::Error.WriteLine($line)
 }
 
-# ============================================================================
-# 取得 API key (env 沒給就讀 KEY_FILE)
-# ============================================================================
+# API key: env 沒給時讀 KeyFile
 if (-not $ApiKey -and (Test-Path -LiteralPath $KeyFile)) {
     $ApiKey = (Get-Content -LiteralPath $KeyFile -Raw -Encoding UTF8) -replace "`r?`n$", ''
 }
@@ -57,9 +51,7 @@ if (-not $ApiKey)  { Write-Log "ERROR: LITELLM_API_KEY 未設定 (env 變數或 
 
 $BaseUrl = $BaseUrl.TrimEnd('/')
 
-# ============================================================================
 # 1. 取得模型清單
-# ============================================================================
 $modelsUrl = "$BaseUrl/v1/models"
 Write-Log "GET $modelsUrl"
 
@@ -80,9 +72,7 @@ if (-not $resp -or -not $resp.data) {
     exit 1
 }
 
-# ============================================================================
-# 2. 寫入 key 檔
-# ============================================================================
+# 2. 寫入 key 檔 (無 BOM、無結尾換行,並設 ACL 僅本人可讀)
 $utf8NoBom = New-Object System.Text.UTF8Encoding $false
 [System.IO.File]::WriteAllText($KeyFile, $ApiKey, $utf8NoBom)
 try {
@@ -99,16 +89,13 @@ try {
 }
 Write-Log "API key 已寫入 $KeyFile"
 
-# ============================================================================
-# 3. 解析模型清單並 merge 到 opencode.json
-# ============================================================================
+# 3. 解析模型清單並 merge 到 opencode.json (只動 provider.<id>,其他設定原樣保留)
 $modelIds = @($resp.data | Where-Object { $_.id -is [string] } | ForEach-Object { $_.id } | Sort-Object -Unique)
 if (-not $modelIds -or $modelIds.Count -eq 0) {
     Write-Log 'ERROR: 模型清單為空,放棄寫入'
     exit 1
 }
 
-# 讀取既有 opencode.json (只 merge 不覆蓋)
 $config = $null
 if (Test-Path -LiteralPath $ConfigFile) {
     try {
@@ -130,7 +117,7 @@ if (-not $config) {
     $config = [PSCustomObject]@{}
 }
 
-# ConvertFrom-Json 產生 PSCustomObject;以下用輔助函式設定屬性
+# 在 PSCustomObject 上設定屬性 (有就覆蓋,沒就 Add-Member)
 function Set-Prop {
     param([Parameter(Mandatory)]$Obj, [string]$Name, $Value)
     if ($Obj.PSObject.Properties[$Name]) {
@@ -140,25 +127,21 @@ function Set-Prop {
     }
 }
 
-# 確保 $schema 存在 (不覆蓋既有值)
 if (-not $config.PSObject.Properties['$schema']) {
     Set-Prop -Obj $config -Name '$schema' -Value 'https://opencode.ai/config.json'
 }
-
-# 確保 provider 物件存在
 if (-not $config.PSObject.Properties['provider']) {
     Set-Prop -Obj $config -Name 'provider' -Value ([PSCustomObject]@{})
 }
 $provider = $config.provider
 
-# 組 models 字典
 $modelsObj = [PSCustomObject]@{}
 foreach ($mid in $modelIds) {
     $displayName = if ($mid.Contains('/')) { $mid.Substring($mid.IndexOf('/') + 1) } else { $mid }
     Set-Prop -Obj $modelsObj -Name $mid -Value ([PSCustomObject]@{ name = $displayName })
 }
 
-# 把 key file 路徑改寫成相對路徑 (用 ~ 開頭,opencode 支援)
+# key file 路徑改寫成 ~ 開頭 (opencode 支援的相對路徑)
 $home = $env:USERPROFILE
 $keyRef = if ($KeyFile.StartsWith($home + '\', [StringComparison]::OrdinalIgnoreCase) -or $KeyFile.StartsWith($home + '/', [StringComparison]::OrdinalIgnoreCase)) {
     '~' + $KeyFile.Substring($home.Length).Replace('\', '/')
@@ -178,11 +161,8 @@ $providerEntry = [PSCustomObject]@{
 
 Set-Prop -Obj $provider -Name $ProviderId -Value $providerEntry
 
-# ============================================================================
-# 4. 原子寫入
-# ============================================================================
+# 4. 原子寫入 (PowerShell 5.1 的 ConvertTo-Json 會 escape < > & ',順手還原)
 $json = $config | ConvertTo-Json -Depth 20
-# PowerShell 5.1 的 ConvertTo-Json 會把 < > & 轉成 unicode escape,順手還原
 $json = $json -replace '\\u003c', '<' -replace '\\u003e', '>' -replace '\\u0026', '&' -replace '\\u0027', "'"
 
 $configDir = Split-Path -Parent $ConfigFile

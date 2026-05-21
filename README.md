@@ -14,7 +14,7 @@
 在 **PowerShell**(建議用 Windows Terminal)執行:
 
 ```powershell
-# 1. 安裝 (沒裝 opencode 會問你要不要自動裝;PATH 自動寫入 User PATH)
+# 1. 安裝 (沒裝 opencode 會自動下載;PATH 自動寫入 User PATH)
 irm https://raw.githubusercontent.com/Bear1203/opencode-litellm-0504/main/install.ps1 | iex
 
 # 2. 開新的 PowerShell / Terminal 視窗 (讓 PATH 生效)
@@ -26,9 +26,13 @@ opencode-litellm
 opencode
 ```
 
-> 如果你的 PowerShell 執行原則阻擋了腳本,可先在當前 session 放寬:
+> 桌面會多一個 `opencode-litellm.bat` 圖示,**那是「設定 / 健檢」用的雙擊入口**
+> (首次雙擊跑設定精靈,之後雙擊跑 doctor 檢查狀態)。
+> 真正要用 opencode,在 Terminal 打 `opencode` 體驗最好。
+
+> 如果 PowerShell 執行原則阻擋了腳本,可先在當前 session 放寬:
 > `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`
-> 再執行上面的 `irm ... | iex`。安裝後 PATH 上只暴露 `opencode-litellm.cmd`(內部自帶 `-ExecutionPolicy Bypass`),所以日常使用不會受 ExecutionPolicy 影響。
+> 再執行上面的 `irm ... | iex`。安裝後 PATH 上只暴露 `opencode-litellm.cmd`(內部自帶 `-ExecutionPolicy Bypass`),日常使用不受 ExecutionPolicy 影響。
 
 ---
 
@@ -36,11 +40,7 @@ opencode
 
 - Windows 10 / 11
 - PowerShell 5.1+ (Windows 內建) 或 PowerShell 7
-- [opencode](https://opencode.ai) — 偵測不到時 install.ps1 會**自動**從 [GitHub Releases](https://github.com/anomalyco/opencode/releases) 下載 `opencode-windows-x64.zip` (ARM64 機器自動換成 arm64 版),解壓到 `%USERPROFILE%\.opencode\bin` 並寫入 User PATH。
-  如果你想自己用套件管理器裝(可選):
-  - `scoop install opencode`
-  - `choco install opencode`
-  - `npm install -g opencode-ai`
+- [opencode](https://opencode.ai) — 偵測不到時 install.ps1 會**自動**從 [GitHub Releases](https://github.com/anomalyco/opencode/releases) 下載 `opencode-windows-x64.zip` (ARM64 機器自動換成 arm64 版),解壓到 `%USERPROFILE%\.opencode\bin` 並寫入 User PATH
 
 ---
 
@@ -49,7 +49,7 @@ opencode
 ```powershell
 opencode-litellm                # 啟動 opencode (首次自動引導 + 同步)
 opencode-litellm sync           # 重新同步模型清單到 opencode.json
-opencode-litellm config         # 互動式修改 LITELLM_API_KEY / LITELLM_BASE_URL / LITELLM_PROVIDER_NAME
+opencode-litellm config         # 互動式修改 API key / URL / provider name
 opencode-litellm doctor         # 檢查環境與設定狀態
 opencode-litellm --help         # 完整說明
 opencode-litellm --version      # 顯示版本
@@ -67,18 +67,14 @@ opencode TUI 內也可以直接呼叫:
 ## 設定
 
 第一次跑 `opencode-litellm` 會互動引導,設定會存到 `%APPDATA%\opencode\litellm.env`。
-日後想修改有三種方式 (任選):
-
-1. `opencode-litellm config` — 互動式 (推薦)
-2. 直接編輯 `%APPDATA%\opencode\litellm.env`
-3. 在 PowerShell 中 `$env:LITELLM_API_KEY = '...'; $env:LITELLM_BASE_URL = '...'`
+之後改設定:`opencode-litellm config`(推薦),或直接編輯 `litellm.env`。
 
 | 變數 | 必填 | 預設 | 說明 |
 |---|:-:|---|---|
 | `LITELLM_API_KEY` | ✓ | — | LiteLLM Bearer token (只存於 `litellm-key` 檔,不寫入 env) |
 | `LITELLM_BASE_URL` | ✓ | — | LiteLLM server URL (例如 `https://litellm.example.com`) |
 | `LITELLM_PROVIDER_ID` | | `litellm` | opencode 中的 provider id |
-| `LITELLM_PROVIDER_NAME` | | `LiteLLM` | opencode 選單上顯示的名稱 (可用 `opencode-litellm config` 互動修改) |
+| `LITELLM_PROVIDER_NAME` | | `LiteLLM` | opencode 選單顯示名稱 |
 | `LITELLM_TIMEOUT` | | `10` | 取模型清單時的 HTTP timeout (秒) |
 
 ---
@@ -90,7 +86,7 @@ opencode TUI 內也可以直接呼叫:
 | 指令進入點 (PATH 上) | `%LOCALAPPDATA%\opencode-litellm\bin\opencode-litellm.cmd` |
 | 主程式 | `%LOCALAPPDATA%\opencode-litellm\lib\opencode-litellm.ps1` |
 | Sync 腳本 | `%LOCALAPPDATA%\opencode-litellm\lib\litellm-sync.ps1` |
-| 桌面雙擊啟動器 | `%USERPROFILE%\Desktop\opencode-litellm.bat` (含 `pause`) |
+| 桌面設定精靈 | `%USERPROFILE%\Desktop\opencode-litellm.bat` |
 | 設定檔 (非機密) | `%APPDATA%\opencode\litellm.env` |
 | API token | `%APPDATA%\opencode\litellm-key` (僅本人可讀) |
 | opencode 主設定 | `%APPDATA%\opencode\opencode.json` |
@@ -107,7 +103,7 @@ opencode TUI 內也可以直接呼叫:
 ```
 opencode-litellm                            (首次 / 設定變動時才會打 API)
   |- 載入 %APPDATA%\opencode\litellm.env
-  |- 沒設定 -> 互動引導,寫入 .env
+  |- 沒設定 -> 互動引導,寫入 .env / litellm-key
   |- opencode.json 還沒有 provider.<id> -> 呼叫 sync
   |     |- GET $BASE_URL/v1/models
   |     |- 把 token 寫入 %APPDATA%\opencode\litellm-key (ACL 僅本人可讀)
@@ -119,45 +115,36 @@ opencode                                    (日常使用,完全離線)
   +- 讀 opencode.json -> 透過 {file:...} 自動注入 token -> 啟動
 ```
 
-> 同步後設定都已就緒,使用者打 `opencode`、`opencode run "hi"`、`opencode serve` 都能直接用。
-> 模型有更新時跑 `opencode-litellm sync` 即可,不會重複呼叫 API。
-
 ---
 
-## 升級
+## 重新安裝 / 解除安裝
 
-重跑安裝指令即可,`litellm.env` 與 `litellm-key` 不會被覆寫:
+本工具沒有「升級」流程,任何重大變動請先**解除安裝再重裝**。
 
 ```powershell
+# 1. 解除安裝 (irm | iex 不能帶參數,要先下載)
+irm https://raw.githubusercontent.com/Bear1203/opencode-litellm-0504/main/install.ps1 -OutFile $env:TEMP\opencode-litellm-install.ps1
+& $env:TEMP\opencode-litellm-install.ps1 -Purge        # 連同 env / token / log 一併刪除
+
+# 2. 重新安裝
 irm https://raw.githubusercontent.com/Bear1203/opencode-litellm-0504/main/install.ps1 | iex
 ```
 
-## 解除安裝
-
-`irm | iex` 不能直接帶參數,所以解除安裝請先下載再執行:
-
-```powershell
-# 移除程式檔案,保留設定
-irm https://raw.githubusercontent.com/Bear1203/opencode-litellm-0504/main/install.ps1 -OutFile $env:TEMP\opencode-litellm-install.ps1
-& $env:TEMP\opencode-litellm-install.ps1 -Uninstall
-
-# 連同 .env / token / log 一併刪除 (opencode.json 不主動動)
-& $env:TEMP\opencode-litellm-install.ps1 -Purge
-```
-
-或者直接手動刪除:`%LOCALAPPDATA%\opencode-litellm\` 整個資料夾。
+> `-Uninstall` 只移除程式檔、保留 `litellm.env` / `litellm-key`;
+> `-Purge` 連設定一起刪。
+> 兩者都不會動 `opencode.json`(內含使用者其他 provider 設定);要清 `provider.litellm` 區塊請手動編輯。
 
 ---
 
 ## 疑難排解
 
-任何問題第一步都先跑 `opencode-litellm doctor`,它會逐項檢查並給你修正指令。
+第一步先跑 `opencode-litellm doctor`。
 
 | 症狀 | 解法 |
 |---|---|
 | `opencode-litellm` 無法辨識 | User PATH 未生效;**關閉所有 terminal 重新開啟**,或手動把 `%LOCALAPPDATA%\opencode-litellm\bin` 加入 User PATH |
-| `opencode` 無法辨識 | opencode 沒裝 / 不在 PATH;`opencode-litellm doctor` 會給安裝指令 |
-| `無法載入檔案 ... 因為這個系統上已停用指令碼執行` | 你直接點到了 `.ps1`。改打 `opencode-litellm` (走 PATH 上的 `.cmd` shim) 或雙擊桌面的 `opencode-litellm.bat`;或執行 `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned` |
+| `opencode` 無法辨識 | opencode 沒裝 / 不在 PATH;重跑安裝程式會自動下載 |
+| `無法載入檔案 ... 因為這個系統上已停用指令碼執行` | 你直接點到了 `.ps1`。改打 `opencode-litellm` (走 PATH 上的 `.cmd` shim);或執行 `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned` |
 | 401 / 403 / 模型清單空 | 跑 `opencode-litellm config` 修正 key 或 URL |
 | 模型清單舊了想刷新 | `opencode-litellm sync` |
 | `opencode.json` 解析失敗 | 為避免破壞既有設定 sync 會中止,請修正或刪除該檔後重試 |
@@ -169,4 +156,4 @@ irm https://raw.githubusercontent.com/Bear1203/opencode-litellm-0504/main/instal
 
 - `litellm-key` 是純文字 token,安裝時會用 NTFS ACL 設定為「只有自己能讀」
 - `litellm.env` 與 `litellm-key` 都放在 `%APPDATA%\opencode\`,屬於使用者私有目錄
-- `opencode.json` 中只放 `{file:...}` 引用,不含明文 token,可放心提交到 git (但不建議,因為內含內部 server URL)
+- `opencode.json` 中只放 `{file:...}` 引用,不含明文 token
