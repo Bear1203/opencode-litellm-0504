@@ -1,4 +1,4 @@
-﻿# opencode-litellm installer (Windows / PowerShell)
+# opencode-litellm installer (Windows / PowerShell)
 #
 # 一般安裝:
 #   irm https://raw.githubusercontent.com/Bear1203/opencode-litellm-0504/main/install.ps1 | iex

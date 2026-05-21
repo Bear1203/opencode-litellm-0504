@@ -18,6 +18,7 @@ $ErrorActionPreference = 'Stop'
 
 $VERSION               = '0.1.0'
 $DEFAULT_PROVIDER_NAME = 'LiteLLM'
+$DEFAULT_BASE_URL      = 'https://litellm-server.pic-ai.work'
 
 $ConfigDir   = Join-Path $env:APPDATA      'opencode'
 $CacheDir    = Join-Path $env:LOCALAPPDATA 'opencode'
@@ -61,7 +62,7 @@ function Ensure-EnvFile {
 # API key 不存在這裡,只存在 %APPDATA%\opencode\litellm-key。
 # 改 key 請執行: opencode-litellm config
 
-LITELLM_BASE_URL=
+LITELLM_BASE_URL=https://litellm-server.pic-ai.work
 LITELLM_PROVIDER_NAME=LiteLLM
 
 # === 可選 ===
@@ -136,8 +137,13 @@ function Load-Config {
 }
 
 function Test-ApiKey  { return [bool]$script:LITELLM_API_KEY }
-function Test-BaseUrl { return [bool]$script:LITELLM_BASE_URL }
-function Test-Url     { param([string]$Url) return ($Url -match '^https?://\S+$') }
+# 視為「未設定」的 URL: 空字串 / 範例值
+function Test-BaseUrl {
+    return ($script:LITELLM_BASE_URL -and `
+            $script:LITELLM_BASE_URL -ne 'https://litellm.example.com' -and `
+            $script:LITELLM_BASE_URL -ne 'https://litellm.example.com/')
+}
+function Test-Url { param([string]$Url) return ($Url -match '^https?://\S+$') }
 
 function Test-ConfigHasProvider {
     if (-not (Test-Path -LiteralPath $ConfigFile)) { return $false }
@@ -201,13 +207,12 @@ function Prompt-BaseUrl {
         $prompt = if ($AllowKeep -and (Test-BaseUrl)) {
             "新的 LITELLM_BASE_URL (Enter 保留 $($script:LITELLM_BASE_URL))"
         } else {
-            'LITELLM_BASE_URL (例如 https://litellm.example.com)'
+            "LITELLM_BASE_URL (Enter 套用預設 $DEFAULT_BASE_URL)"
         }
         $value = Read-Host $prompt
         if (-not $value) {
             if ($AllowKeep) { return }
-            Write-LWarn '不能為空,請重新輸入 (或 Ctrl+C 中止)'
-            continue
+            $value = $DEFAULT_BASE_URL
         }
         $value = $value.TrimEnd('/')
         if (-not (Test-Url $value)) {
@@ -217,7 +222,7 @@ function Prompt-BaseUrl {
         Update-EnvKey -Key 'LITELLM_BASE_URL' -Value $value
         $script:LITELLM_BASE_URL = $value
         $env:LITELLM_BASE_URL = $value
-        Write-LOk '已儲存 LITELLM_BASE_URL'
+        Write-LOk "已儲存 LITELLM_BASE_URL ($value)"
         return
     }
 }
