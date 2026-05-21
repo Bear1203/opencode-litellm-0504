@@ -41,6 +41,15 @@ function Write-Log {
     [Console]::Error.WriteLine($line)
 }
 
+# 全域 trap: 捕捉所有未處理的 terminating error,確保訊息一定會印出 stderr + log
+# 避免 "sync 失敗 exit 1 但沒看到原因" 的情況
+trap {
+    Write-Log "FATAL: $($_.Exception.Message)"
+    Write-Log "       at: $($_.InvocationInfo.ScriptName):$($_.InvocationInfo.ScriptLineNumber)"
+    if ($_.ScriptStackTrace) { Write-Log "       stack: $($_.ScriptStackTrace -replace "`r?`n", ' | ')" }
+    exit 1
+}
+
 # API key: env 沒給時讀 KeyFile
 if (-not $ApiKey -and (Test-Path -LiteralPath $KeyFile)) {
     $ApiKey = (Get-Content -LiteralPath $KeyFile -Raw -Encoding UTF8) -replace "`r?`n$", ''
@@ -72,20 +81,20 @@ if (-not $resp -or -not $resp.data) {
     exit 1
 }
 
-# 2. 寫入 key 檔 (無 BOM、無結尾換行,並設 ACL 僅本人可讀)
+# 2. 寫入 key 檔 (無 BOM、無結尾換行,並用 icacls 把 DACL 收緊為僅本人可讀)
 $utf8NoBom = New-Object System.Text.UTF8Encoding $false
 [System.IO.File]::WriteAllText($KeyFile, $ApiKey, $utf8NoBom)
+
+# 用 icacls 而非 Set-Acl: Set-Acl 在某些情境會嘗試動到 SACL,觸發 SeSecurityPrivilege 缺權限。
+# icacls 只動 DACL,一般使用者就可執行。
 try {
-    $acl = Get-Acl -LiteralPath $KeyFile
-    $acl.SetAccessRuleProtection($true, $false)
-    $acl.Access | ForEach-Object { [void]$acl.RemoveAccessRule($_) }
-    $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
-        [System.Security.Principal.WindowsIdentity]::GetCurrent().Name,
-        'FullControl', 'Allow')
-    $acl.AddAccessRule($rule)
-    Set-Acl -LiteralPath $KeyFile -AclObject $acl
+    $userId = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+    $null = & icacls.exe $KeyFile /inheritance:r /grant:r "${userId}:(F)" 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Log "WARN: icacls 設定 $KeyFile 權限失敗 (exit $LASTEXITCODE),token 仍寫入但權限可能寬鬆"
+    }
 } catch {
-    Write-Log "WARN: 無法設定 $KeyFile 的 ACL (僅本人可讀): $($_.Exception.Message)"
+    Write-Log "WARN: 設定 $KeyFile 權限失敗: $($_.Exception.Message)"
 }
 Write-Log "API key 已寫入 $KeyFile"
 
@@ -142,9 +151,10 @@ foreach ($mid in $modelIds) {
 }
 
 # key file 路徑改寫成 ~ 開頭 (opencode 支援的相對路徑)
-$home = $env:USERPROFILE
-$keyRef = if ($KeyFile.StartsWith($home + '\', [StringComparison]::OrdinalIgnoreCase) -or $KeyFile.StartsWith($home + '/', [StringComparison]::OrdinalIgnoreCase)) {
-    '~' + $KeyFile.Substring($home.Length).Replace('\', '/')
+# 注意: 不能用 $home (那是 PowerShell 唯讀的 automatic variable,賦值會 throw)
+$userHome = $env:USERPROFILE
+$keyRef = if ($KeyFile.StartsWith($userHome + '\', [StringComparison]::OrdinalIgnoreCase) -or $KeyFile.StartsWith($userHome + '/', [StringComparison]::OrdinalIgnoreCase)) {
+    '~' + $KeyFile.Substring($userHome.Length).Replace('\', '/')
 } else {
     $KeyFile.Replace('\', '/')
 }
