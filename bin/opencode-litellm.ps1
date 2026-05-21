@@ -182,15 +182,17 @@ function Mask-Key {
 function Prompt-ApiKey {
     param([switch]$AllowKeep)
     while ($true) {
-        $prompt = if ($AllowKeep -and (Test-ApiKey)) {
+        $hasExisting = (Test-ApiKey)
+        $prompt = if ($AllowKeep -and $hasExisting) {
             "新的 LITELLM_API_KEY (Enter 保留 $(Mask-Key $script:LITELLM_API_KEY))"
         } else {
-            'LITELLM_API_KEY (你的 LiteLLM API key)'
+            'LITELLM_API_KEY (你的 LiteLLM API key,不能空白)'
         }
         $value = Read-Host $prompt
         if (-not $value) {
-            if ($AllowKeep) { return }
-            Write-LWarn '不能為空,請重新輸入 (或 Ctrl+C 中止)'
+            # 只有「已存在」+「允許保留」才能空 Enter 跳過,否則必須輸入
+            if ($AllowKeep -and $hasExisting) { return }
+            Write-LWarn '不能為空,請輸入你的 API key (或 Ctrl+C 中止)'
             continue
         }
         Write-KeyFile -Value $value
@@ -204,14 +206,17 @@ function Prompt-ApiKey {
 function Prompt-BaseUrl {
     param([switch]$AllowKeep)
     while ($true) {
-        $prompt = if ($AllowKeep -and (Test-BaseUrl)) {
+        $hasExisting = (Test-BaseUrl)
+        $prompt = if ($AllowKeep -and $hasExisting) {
             "新的 LITELLM_BASE_URL (Enter 保留 $($script:LITELLM_BASE_URL))"
         } else {
             "LITELLM_BASE_URL (Enter 套用預設 $DEFAULT_BASE_URL)"
         }
         $value = Read-Host $prompt
         if (-not $value) {
-            if ($AllowKeep) { return }
+            # 已有現存值且允許保留 -> 直接返回
+            if ($AllowKeep -and $hasExisting) { return }
+            # 否則套用預設
             $value = $DEFAULT_BASE_URL
         }
         $value = $value.TrimEnd('/')
@@ -229,16 +234,17 @@ function Prompt-BaseUrl {
 
 function Prompt-ProviderName {
     param([switch]$AllowKeep)
+    # provider name 一定有值 (Load-Config 兜底 $DEFAULT_PROVIDER_NAME),沒有「未設定」狀態
     $current = if ($script:LITELLM_PROVIDER_NAME) { $script:LITELLM_PROVIDER_NAME } else { $DEFAULT_PROVIDER_NAME }
     $prompt = if ($AllowKeep) {
         "新的 LITELLM_PROVIDER_NAME (opencode 選單顯示名稱,Enter 保留 $current)"
     } else {
-        "LITELLM_PROVIDER_NAME (opencode 選單顯示名稱,Enter 套用預設 $DEFAULT_PROVIDER_NAME)"
+        "LITELLM_PROVIDER_NAME (opencode 選單顯示名稱,Enter 套用 $current)"
     }
     $value = Read-Host $prompt
     if (-not $value) {
         if ($AllowKeep) { return }
-        $value = $DEFAULT_PROVIDER_NAME
+        $value = $current
     }
     Update-EnvKey -Key 'LITELLM_PROVIDER_NAME' -Value $value
     $script:LITELLM_PROVIDER_NAME = $value
@@ -339,14 +345,19 @@ function Run-Doctor {
 }
 
 function Run-FirstTimeSetupIfNeeded {
+    # 若 API key 與 URL 都已存在,直接跳過 setup
     if ((Test-ApiKey) -and (Test-BaseUrl)) { return }
-    Write-LInfo '尚未完成設定,請依序輸入:'
+
+    # 至少有一項未設定 -> 把三個都跑一遍 (帶 -AllowKeep)
+    # 已存在的項目會顯示「Enter 保留 ...」,使用者可以選擇 Enter 跳過或輸入新值。
+    # 這樣使用者一定看得到 key 是否已寫入,而不會被「靜默跳過」搞混。
+    Write-LInfo '設定 LiteLLM 連線資訊 (已有值的項目可按 Enter 保留)'
     Write-Host ''
-    if (-not (Test-ApiKey))  { Prompt-ApiKey  }
+    Prompt-ApiKey       -AllowKeep
     Write-Host ''
-    if (-not (Test-BaseUrl)) { Prompt-BaseUrl }
+    Prompt-BaseUrl      -AllowKeep
     Write-Host ''
-    Prompt-ProviderName
+    Prompt-ProviderName -AllowKeep
     Write-Host ''
     Write-LInfo '設定完成,繼續啟動...'
     Write-Host ''
