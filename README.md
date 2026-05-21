@@ -45,7 +45,9 @@ opencode TUI 內也可以打 `/litellm-sync` 或 `/litellm-doctor`。
 
 ## 設定
 
-設定存在 `%APPDATA%\opencode\litellm.env`,API token 單獨存在 `%APPDATA%\opencode\litellm-key`(NTFS ACL 設為僅本人可讀)。
+設定存在 `%USERPROFILE%\.config\opencode\litellm.env`,API token 單獨存在 `%USERPROFILE%\.config\opencode\litellm-key`(權限收緊為僅本人可讀)。
+
+> 注意:opencode 官方 global config 路徑就是 `~/.config/opencode/opencode.json`,我們所有 LiteLLM 周邊都放在這個資料夾下統一管理。
 
 | 變數 | 必填 | 預設 | 說明 |
 |---|:-:|---|---|
@@ -90,4 +92,4 @@ irm https://raw.githubusercontent.com/Bear1203/opencode-litellm-0504/main/instal
 | `opencode-litellm` 找不到 | PATH 未生效,**關閉所有 Terminal 重開** |
 | 401 / 403 / 模型清單空 | `opencode-litellm config` 修正 key 或 URL |
 | `opencode.json` 解析失敗 | sync 為了不破壞既有設定會中止,請修正或刪除該檔後重試 |
-| 看詳細日誌 | `Get-Content -Tail 50 $env:LOCALAPPDATA\opencode\litellm-sync.log` |
+| 看詳細日誌 | `Get-Content -Tail 50 $env:USERPROFILE\.config\opencode\litellm-sync.log` |

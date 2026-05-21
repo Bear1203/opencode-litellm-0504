@@ -24,16 +24,17 @@ $DefaultRepo = 'https://raw.githubusercontent.com/Bear1203/opencode-litellm-0504
 $RepoRawBase = if ($env:OPENCODE_LITELLM_REPO) { $env:OPENCODE_LITELLM_REPO } else { $DefaultRepo }
 $Version = '0.1.0'
 
-# 路徑 (Windows 標準位置)
-#   bin / lib    %LOCALAPPDATA%\opencode-litellm\{bin,lib}
-#   config       %APPDATA%\opencode\
-#   cache / log  %LOCALAPPDATA%\opencode\
+# 路徑配置
+#   程式檔 (我們的 wrapper):  %LOCALAPPDATA%\opencode-litellm\{bin,lib}
+#   opencode 設定 / log:      %USERPROFILE%\.config\opencode\
+#       opencode 讀的 global config 路徑就是 ~/.config/opencode/opencode.json,
+#       所有 LiteLLM 周邊 (env / key / log / slash commands) 都放這
 if (-not $Prefix) { $Prefix = Join-Path $env:LOCALAPPDATA 'opencode-litellm' }
 $BinDir      = Join-Path $Prefix 'bin'
 $LibDir      = Join-Path $Prefix 'lib'
-$ConfigDir   = Join-Path $env:APPDATA 'opencode'
+$ConfigDir   = Join-Path $env:USERPROFILE '.config\opencode'
 $CommandsDir = Join-Path $ConfigDir 'commands'
-$CacheDir    = Join-Path $env:LOCALAPPDATA 'opencode'
+$CacheDir    = $ConfigDir
 $EnvFile     = Join-Path $ConfigDir 'litellm.env'
 
 $script:PathModified = $false
@@ -203,6 +204,38 @@ function Do-Install {
         Install-Opencode
     }
 
+    # 清理舊版 (<= 2026-05-21) 殘留: 之前裝在 %APPDATA%\opencode\ 的 LiteLLM 設定,
+    # opencode 不會讀這個位置 (它讀 ~/.config/opencode/)。直接搬移到新位置。
+    $legacyConfigDir = Join-Path $env:APPDATA 'opencode'
+    if (Test-Path -LiteralPath $legacyConfigDir) {
+        if (-not (Test-Path -LiteralPath $ConfigDir)) {
+            New-Item -ItemType Directory -Path $ConfigDir -Force | Out-Null
+        }
+        $migrations = @(
+            @{ Old = (Join-Path $legacyConfigDir 'litellm.env');                 New = (Join-Path $ConfigDir 'litellm.env') }
+            @{ Old = (Join-Path $legacyConfigDir 'litellm-key');                 New = (Join-Path $ConfigDir 'litellm-key') }
+            @{ Old = (Join-Path $legacyConfigDir 'opencode.json');               New = (Join-Path $ConfigDir 'opencode.json') }
+            @{ Old = (Join-Path $legacyConfigDir 'commands\litellm-sync.md');    New = (Join-Path $CommandsDir 'litellm-sync.md') }
+            @{ Old = (Join-Path $legacyConfigDir 'commands\litellm-doctor.md');  New = (Join-Path $CommandsDir 'litellm-doctor.md') }
+        )
+        foreach ($m in $migrations) {
+            if ((Test-Path -LiteralPath $m.Old) -and -not (Test-Path -LiteralPath $m.New)) {
+                $newDir = Split-Path -Parent $m.New
+                if (-not (Test-Path -LiteralPath $newDir)) {
+                    New-Item -ItemType Directory -Path $newDir -Force | Out-Null
+                }
+                Write-Info "搬移舊路徑: $($m.Old) -> $($m.New)"
+                Move-Item -LiteralPath $m.Old -Destination $m.New -Force
+            }
+        }
+        # 順手清掉舊 log
+        $legacyLog = Join-Path $env:LOCALAPPDATA 'opencode\litellm-sync.log'
+        if (Test-Path -LiteralPath $legacyLog) {
+            Write-Info "移除舊 log: $legacyLog"
+            Remove-Item -LiteralPath $legacyLog -Force -ErrorAction SilentlyContinue
+        }
+    }
+
     if ($LocalSrc) {
         Write-Info "本機來源: $LocalSrc"
     } else {
@@ -343,6 +376,23 @@ function Do-Uninstall {
     foreach ($d in @($BinDir, $LibDir, $Prefix)) {
         if ((Test-Path -LiteralPath $d) -and -not (Get-ChildItem -LiteralPath $d -Force)) {
             Remove-Item -LiteralPath $d -Force
+        }
+    }
+
+    # 順手清掉舊版 (<= 2026-05-21) 留在 %APPDATA%\opencode\ 的 LiteLLM 殘留檔
+    $legacyConfigDir = Join-Path $env:APPDATA 'opencode'
+    $legacyCacheDir  = Join-Path $env:LOCALAPPDATA 'opencode'
+    $legacyFiles = @(
+        (Join-Path $legacyConfigDir 'litellm.env'),
+        (Join-Path $legacyConfigDir 'litellm-key'),
+        (Join-Path $legacyConfigDir 'commands\litellm-sync.md'),
+        (Join-Path $legacyConfigDir 'commands\litellm-doctor.md'),
+        (Join-Path $legacyCacheDir  'litellm-sync.log')
+    )
+    foreach ($f in $legacyFiles) {
+        if (Test-Path -LiteralPath $f) {
+            Write-Info "移除舊路徑殘留: $f"
+            Remove-Item -LiteralPath $f -Force
         }
     }
 

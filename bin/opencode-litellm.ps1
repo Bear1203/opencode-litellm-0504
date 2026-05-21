@@ -20,8 +20,10 @@ $VERSION               = '0.1.0'
 $DEFAULT_PROVIDER_NAME = 'LiteLLM'
 $DEFAULT_BASE_URL      = 'https://litellm-server.pic-ai.work'
 
-$ConfigDir   = Join-Path $env:APPDATA      'opencode'
-$CacheDir    = Join-Path $env:LOCALAPPDATA 'opencode'
+# opencode 的 global config 路徑就是 ~/.config/opencode/opencode.json,
+# 我們所有 LiteLLM 周邊檔 (env / key / log) 都放在同一個資料夾下統一管理。
+$ConfigDir   = Join-Path $env:USERPROFILE '.config\opencode'
+$CacheDir    = $ConfigDir
 $EnvFile     = Join-Path $ConfigDir 'litellm.env'
 $ConfigFile  = Join-Path $ConfigDir 'opencode.json'
 $KeyFile     = Join-Path $ConfigDir 'litellm-key'
@@ -59,7 +61,7 @@ function Ensure-EnvFile {
     $template = @'
 # opencode-litellm 設定檔 (KEY=VALUE,不要寫 shell 語法)
 #
-# API key 不存在這裡,只存在 %APPDATA%\opencode\litellm-key。
+# API key 不存在這裡,只存在 %USERPROFILE%\.config\opencode\litellm-key。
 # 改 key 請執行: opencode-litellm config
 
 LITELLM_BASE_URL=https://litellm-server.pic-ai.work

@@ -9,9 +9,9 @@
 #   LITELLM_PROVIDER_ID    (預設 litellm)
 #   LITELLM_PROVIDER_NAME  (預設 LiteLLM)
 #   LITELLM_TIMEOUT        (預設 10) HTTP timeout 秒數
-#   OPENCODE_CONFIG_FILE   (預設 %APPDATA%\opencode\opencode.json)
-#   LITELLM_KEY_FILE       (預設 %APPDATA%\opencode\litellm-key)
-#   LITELLM_LOG_FILE       (預設 %LOCALAPPDATA%\opencode\litellm-sync.log)
+#   OPENCODE_CONFIG_FILE   (預設 %USERPROFILE%\.config\opencode\opencode.json)
+#   LITELLM_KEY_FILE       (預設 %USERPROFILE%\.config\opencode\litellm-key)
+#   LITELLM_LOG_FILE       (預設 %USERPROFILE%\.config\opencode\litellm-sync.log)
 
 [CmdletBinding()]
 param()
@@ -24,9 +24,10 @@ $ProviderId   = if ($env:LITELLM_PROVIDER_ID)  { $env:LITELLM_PROVIDER_ID }  els
 $ProviderName = if ($env:LITELLM_PROVIDER_NAME){ $env:LITELLM_PROVIDER_NAME }else { 'LiteLLM' }
 $TimeoutSec   = if ($env:LITELLM_TIMEOUT)      { [int]$env:LITELLM_TIMEOUT } else { 10 }
 
-$ConfigFile = if ($env:OPENCODE_CONFIG_FILE) { $env:OPENCODE_CONFIG_FILE } else { Join-Path $env:APPDATA 'opencode\opencode.json' }
-$KeyFile    = if ($env:LITELLM_KEY_FILE)     { $env:LITELLM_KEY_FILE }     else { Join-Path $env:APPDATA 'opencode\litellm-key' }
-$LogFile    = if ($env:LITELLM_LOG_FILE)     { $env:LITELLM_LOG_FILE }     else { Join-Path $env:LOCALAPPDATA 'opencode\litellm-sync.log' }
+$OpencodeConfigDir = Join-Path $env:USERPROFILE '.config\opencode'
+$ConfigFile = if ($env:OPENCODE_CONFIG_FILE) { $env:OPENCODE_CONFIG_FILE } else { Join-Path $OpencodeConfigDir 'opencode.json' }
+$KeyFile    = if ($env:LITELLM_KEY_FILE)     { $env:LITELLM_KEY_FILE }     else { Join-Path $OpencodeConfigDir 'litellm-key' }
+$LogFile    = if ($env:LITELLM_LOG_FILE)     { $env:LITELLM_LOG_FILE }     else { Join-Path $OpencodeConfigDir 'litellm-sync.log' }
 
 foreach ($d in @((Split-Path -Parent $LogFile), (Split-Path -Parent $ConfigFile), (Split-Path -Parent $KeyFile))) {
     if ($d -and -not (Test-Path -LiteralPath $d)) {
