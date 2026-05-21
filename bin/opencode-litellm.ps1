@@ -388,22 +388,76 @@ function Run-FirstTimeSetupIfNeeded {
 function Show-Help {
     @"
 opencode-litellm v$VERSION  (Windows / PowerShell)
+LiteLLM 模型整合工具,把 LiteLLM 的所有模型清單同步進 opencode。
 
-用法:
-  opencode-litellm                   啟動 opencode (首次會引導設定 + 同步模型)
-  opencode-litellm <opencode args>   參數會原樣傳給 opencode
+================================================================
+本工具指令 (opencode-litellm ...)
+================================================================
+  opencode-litellm              啟動 opencode (首次自動引導 + 同步模型清單)
+  opencode-litellm <args>       參數原樣傳給 opencode,例如:
+                                  opencode-litellm run "hello"
 
-子指令:
-  sync          重新同步 LiteLLM 模型清單到 opencode.json
-  config        互動式修改 API key / URL / provider name 後重新同步
-  doctor        檢查環境與設定狀態
-  --help, -h    顯示本說明
-  --version     顯示版本
+  sync                          重新同步 LiteLLM 模型清單到 opencode.json
+                                (新增 / 刪除模型後跑一次,opencode 重啟生效)
+  config                        互動式修改 API key / URL / provider name
+                                (改完會自動 sync 一次)
+  doctor                        檢查環境設定狀態 (找不到指令 / key 過期等)
+  help, --help, -h              顯示本說明
+  --version                     顯示版本
 
-設定檔:
+================================================================
+opencode 本體常用 (在 TUI 內,輸入 / 開頭)
+================================================================
+換模型 / 看模型清單:
+  /models                       開啟模型選單                  快捷鍵: Ctrl+X M
+
+對話控制:
+  /new                          開啟新對話 (清空當前)         快捷鍵: Ctrl+X N
+  /sessions                     列出 / 切換歷史 session       快捷鍵: Ctrl+X L
+  /compact                      壓縮當前對話 (context 滿時)   快捷鍵: Ctrl+X C
+  /undo                         還原上一則訊息 (含檔案變更)   快捷鍵: Ctrl+X U
+  /redo                         重做 (在 /undo 之後)          快捷鍵: Ctrl+X R
+  /exit                         離開 opencode                 快捷鍵: Ctrl+X Q
+
+訊息技巧:
+  @檔案名                       插入檔案內容到對話 (fuzzy 搜尋)
+  !指令                         在訊息開頭加 ! 直接執行 shell 指令
+
+其他:
+  /themes                       換 TUI 主題                   快捷鍵: Ctrl+X T
+  /editor                       用外部編輯器寫長 prompt       快捷鍵: Ctrl+X E
+  /share                        分享 session 連結
+  /init                         產生 / 更新 AGENTS.md
+  Ctrl+P                        開啟指令面板 (搜尋所有指令)
+
+================================================================
+看 token 使用量 / 費用
+================================================================
+  - opencode TUI 右下角會即時顯示「當前 session 的 tokens」
+  - 累計用量與費用要去 LiteLLM 後台看 (LiteLLM 是 proxy,每次 call
+    都會記在那邊;opencode 本身不收費也不統計)
+
+================================================================
+我們專案常用組合
+================================================================
+  # 新增模型,LiteLLM 那邊上完 -> 在本機重抓清單
+  opencode-litellm sync
+
+  # 換 API key 或 URL
+  opencode-litellm config
+
+  # 任何問題第一步
+  opencode-litellm doctor
+
+================================================================
+設定檔位置
+================================================================
   $EnvFile
   $KeyFile  (僅本人可讀)
   $ConfigFile  (opencode 主設定)
+
+詳細文件: https://github.com/Bear1203/opencode-litellm-0504
+opencode 官方文件: https://opencode.ai/docs/
 "@
 }
 

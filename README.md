@@ -41,6 +41,9 @@ opencode-litellm doctor         # 檢查環境狀態
 
 opencode TUI 內也可以打 `/litellm-sync` 或 `/litellm-doctor`。
 
+> 注意:`sync` / `config` / `doctor` 跑的是**本機磁碟上的 `.ps1`**。
+> 上游有更新時,**先重跑 `irm ... install.ps1 | iex` 才會拉到新版**。
+
 ---
 
 ## 設定

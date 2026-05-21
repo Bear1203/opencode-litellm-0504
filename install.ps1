@@ -348,6 +348,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "$LibDir\opencode-litellm.ps
     Write-Ok '       opencode'
     Write-Ok ''
     Write-Ok '  其他常用指令:'
+    Write-Ok '       opencode-litellm help       # 完整說明 (含 opencode TUI 常用指令)'
     Write-Ok '       opencode-litellm sync       # 重新同步模型清單'
     Write-Ok '       opencode-litellm config     # 修改 API key / URL'
     Write-Ok '       opencode-litellm doctor     # 檢查環境狀態'
