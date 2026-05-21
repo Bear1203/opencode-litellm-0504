@@ -157,6 +157,18 @@ function Test-ConfigHasProvider {
     return (($prov.models.PSObject.Properties | Measure-Object).Count -gt 0)
 }
 
+# 讀 opencode.json 頂層的預設模型 (沒有就回 $null)
+function Get-ConfigDefaultModel {
+    if (-not (Test-Path -LiteralPath $ConfigFile)) { return $null }
+    try {
+        $cfg = Get-Content -LiteralPath $ConfigFile -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop
+    } catch {
+        return $null
+    }
+    if ($cfg.PSObject.Properties['model']) { return $cfg.model }
+    return $null
+}
+
 function Require-Credentials {
     if (-not (Test-Path -LiteralPath $SyncScript)) {
         Write-LErr "找不到 sync 腳本: $SyncScript"
@@ -325,6 +337,14 @@ function Run-Doctor {
     } else {
         Write-Host "MISSING 缺 provider.$($script:LITELLM_PROVIDER_ID) (跑 'opencode-litellm sync')" -ForegroundColor Red
         $issues++
+    }
+
+    Write-Host -NoNewline '  預設模型 (model)       : '
+    $defaultModel = Get-ConfigDefaultModel
+    if ($defaultModel) {
+        Write-Host "OK $defaultModel" -ForegroundColor Green
+    } else {
+        Write-Host "INFO 未設定 (opencode 啟動時會用內建預設;跑 sync 會自動帶入)" -ForegroundColor Yellow
     }
 
     Write-Host -NoNewline '  litellm-key (token)    : '

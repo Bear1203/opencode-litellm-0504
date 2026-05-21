@@ -171,6 +171,15 @@ $providerEntry = [PSCustomObject]@{
 
 Set-Prop -Obj $provider -Name $ProviderId -Value $providerEntry
 
+# 預設 model: 若 config 頂層還沒設,把它指向 LiteLLM 排序後的第一個模型,
+# 讓使用者啟動 opencode 後預設選的就是 LiteLLM 而不是 OpenAI 等內建 provider。
+# 使用者手動改過後就不會被覆蓋。
+if (-not $config.PSObject.Properties['model']) {
+    $defaultModel = "$ProviderId/$($modelIds[0])"
+    Set-Prop -Obj $config -Name 'model' -Value $defaultModel
+    Write-Log "預設模型: $defaultModel"
+}
+
 # 4. 原子寫入 (PowerShell 5.1 的 ConvertTo-Json 會 escape < > & ',順手還原)
 $json = $config | ConvertTo-Json -Depth 20
 $json = $json -replace '\\u003c', '<' -replace '\\u003e', '>' -replace '\\u0026', '&' -replace '\\u0027', "'"
