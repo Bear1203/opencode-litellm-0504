@@ -59,18 +59,25 @@ opencode TUI 內也可以打 `/litellm-sync` 或 `/litellm-doctor`。
 
 ## 重新安裝 / 解除安裝
 
-本工具沒有升級流程,有變動請**解除安裝再重裝**。
+本工具沒有升級流程,有變動請**解除安裝再重裝**。透過環境變數控制安裝行為:
 
 ```powershell
-# 解除安裝 (要先下載,因為 irm | iex 不能帶參數)
-irm https://raw.githubusercontent.com/Bear1203/opencode-litellm-0504/main/install.ps1 -OutFile $env:TEMP\opencode-litellm-install.ps1
-& $env:TEMP\opencode-litellm-install.ps1 -Purge       # -Purge 連 env / token / log 一起刪
+# 解除安裝 (連 env / token / log 一起刪)
+$env:OPENCODE_LITELLM_PURGE = '1'
+irm https://raw.githubusercontent.com/Bear1203/opencode-litellm-0504/main/install.ps1 | iex
+Remove-Item Env:OPENCODE_LITELLM_PURGE
 
 # 重裝
 irm https://raw.githubusercontent.com/Bear1203/opencode-litellm-0504/main/install.ps1 | iex
 ```
 
-> 不會動 `opencode.json`(內含使用者其他 provider 設定);要清 `provider.litellm` 區塊請手動編輯。
+| 環境變數 | 用途 |
+|---|---|
+| `OPENCODE_LITELLM_UNINSTALL=1` | 移除程式檔,保留 `litellm.env` / `litellm-key` |
+| `OPENCODE_LITELLM_PURGE=1` | 連同 env / token / log 一起刪除 |
+| `OPENCODE_LITELLM_PREFIX=C:\path` | 覆寫安裝路徑 (預設 `%LOCALAPPDATA%\opencode-litellm`) |
+
+> 兩種模式都不會動 `opencode.json`(內含其他 provider 設定);要清 `provider.litellm` 區塊請手動編輯。
 
 ---
 

@@ -1,31 +1,27 @@
 ﻿# opencode-litellm installer (Windows / PowerShell)
 #
-# 一般使用:
+# 一般安裝:
 #   irm https://raw.githubusercontent.com/Bear1203/opencode-litellm-0504/main/install.ps1 | iex
 #
-# 帶旗標 (irm | iex 不能直接帶參數,要先下載再執行):
-#   irm <url>/install.ps1 -OutFile install.ps1
-#   .\install.ps1 -Uninstall     # 移除 (保留 litellm.env / litellm-key)
-#   .\install.ps1 -Purge         # 連同 env / key / log 一起刪除
-#   .\install.ps1 -Prefix DIR    # 覆寫安裝路徑 (預設 %LOCALAPPDATA%\opencode-litellm)
-#   .\install.ps1 -Repo URL      # 覆寫下載來源
-#   .\install.ps1 -LocalSrc DIR  # 從本機目錄安裝 (開發用,跳過下載)
-#   .\install.ps1 -Help
-
-[CmdletBinding()]
-param(
-    [switch]$Uninstall,
-    [switch]$Purge,
-    [string]$Prefix,
-    [string]$Repo,
-    [string]$LocalSrc,
-    [switch]$Help
-)
+# 解除安裝 / 自訂安裝: 透過環境變數控制 (iex 不能直接帶 param,故走 env)
+#   $env:OPENCODE_LITELLM_UNINSTALL = '1'   # 移除程式檔 (保留 env / key)
+#   $env:OPENCODE_LITELLM_PURGE     = '1'   # 連同 env / key / log 一起移除
+#   $env:OPENCODE_LITELLM_PREFIX    = 'C:\path'  # 覆寫安裝路徑 (預設 %LOCALAPPDATA%\opencode-litellm)
+#   $env:OPENCODE_LITELLM_REPO      = 'https://...' # 覆寫下載來源
+#   $env:OPENCODE_LITELLM_LOCALSRC  = 'C:\src' # 從本機目錄安裝 (開發用)
+#   接著: irm <url>/install.ps1 | iex
+#   用完後記得 Remove-Item Env:OPENCODE_LITELLM_* 清掉
 
 $ErrorActionPreference = 'Stop'
 
+# 從 env 讀控制旗標 (取代以前的 param(...),讓 `irm | iex` 可用)
+$Uninstall = [bool]$env:OPENCODE_LITELLM_UNINSTALL
+$Purge     = [bool]$env:OPENCODE_LITELLM_PURGE
+$Prefix    = $env:OPENCODE_LITELLM_PREFIX
+$LocalSrc  = $env:OPENCODE_LITELLM_LOCALSRC
+
 $DefaultRepo = 'https://raw.githubusercontent.com/Bear1203/opencode-litellm-0504/main'
-$RepoRawBase = if ($Repo) { $Repo } elseif ($env:OPENCODE_LITELLM_REPO) { $env:OPENCODE_LITELLM_REPO } else { $DefaultRepo }
+$RepoRawBase = if ($env:OPENCODE_LITELLM_REPO) { $env:OPENCODE_LITELLM_REPO } else { $DefaultRepo }
 $Version = '0.1.0'
 
 # 路徑 (Windows 標準位置)
@@ -46,27 +42,6 @@ function Write-Info  { param([string]$Msg) Write-Host "[install] $Msg" }
 function Write-Ok    { param([string]$Msg) Write-Host $Msg -ForegroundColor Green }
 function Write-Warn2 { param([string]$Msg) Write-Host $Msg -ForegroundColor Yellow }
 function Write-Err   { param([string]$Msg) Write-Host $Msg -ForegroundColor Red }
-
-function Show-Help {
-    @"
-opencode-litellm installer (Windows / PowerShell)
-
-用法:
-  irm https://raw.githubusercontent.com/Bear1203/opencode-litellm-0504/main/install.ps1 | iex
-
-下載後執行 (帶旗標):
-  irm <url>/install.ps1 -OutFile install.ps1
-  .\install.ps1                # 安裝
-  .\install.ps1 -Uninstall     # 移除程式檔 (保留 env / key)
-  .\install.ps1 -Purge         # 連同 env / key / log 一起移除
-  .\install.ps1 -Prefix DIR    # 覆寫安裝路徑
-  .\install.ps1 -Repo URL      # 覆寫下載來源
-  .\install.ps1 -LocalSrc DIR  # 從本機目錄安裝 (開發用)
-  .\install.ps1 -Help
-"@
-}
-
-if ($Help) { Show-Help; return }
 
 function Test-Command {
     param([string]$Name)
@@ -381,7 +356,7 @@ function Do-Uninstall {
         Write-Warn2 "保留 $ConfigDir\opencode.json 不動 (內含使用者其他設定)。"
         Write-Warn2 '若要清除 provider.litellm 區塊請手動編輯該檔。'
     } else {
-        Write-Info '保留設定 / token / log (用 -Purge 可一併刪除)'
+        Write-Info '保留設定 / token / log (設 $env:OPENCODE_LITELLM_PURGE = 1 可一併刪除)'
     }
     Write-Ok '已移除'
 }
