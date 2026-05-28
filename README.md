@@ -17,7 +17,7 @@ irm https://raw.githubusercontent.com/Bear1203/opencode-litellm-0504/main/instal
 
 # 2. 開新的 Terminal 視窗讓 PATH 生效
 
-# 3. 首次啟動,引導你輸入 API key / URL,自動同步模型
+# 3. 首次啟動,引導你輸入 API key,自動同步模型
 opencode-litellm
 
 # 4. 之後直接用 opencode
@@ -35,7 +35,7 @@ opencode
 ```powershell
 opencode-litellm                # 啟動 opencode (首次自動引導 + 同步)
 opencode-litellm sync           # 重新同步模型清單
-opencode-litellm config         # 修改 API key / URL / provider name
+opencode-litellm config         # 修改 API Key
 opencode-litellm doctor         # 檢查環境狀態
 ```
 
@@ -55,9 +55,9 @@ opencode TUI 內也可以打 `/litellm-sync` 或 `/litellm-doctor`。
 | 變數 | 必填 | 預設 | 說明 |
 |---|:-:|---|---|
 | `LITELLM_API_KEY` | ✓ | — | LiteLLM Bearer token (存於 `litellm-key`,不寫入 env) |
-| `LITELLM_BASE_URL` | ✓ | — | LiteLLM server URL |
+| `LITELLM_BASE_URL` | | `https://litellm-server.pic-ai.work` | LiteLLM server URL (自動套用預設) |
 | `LITELLM_PROVIDER_ID` | | `litellm` | opencode provider id |
-| `LITELLM_PROVIDER_NAME` | | `LiteLLM` | opencode 選單顯示名稱 |
+| `LITELLM_PROVIDER_NAME` | | `PIC-Litellm` | opencode 選單顯示名稱 (固定值) |
 | `LITELLM_TIMEOUT` | | `10` | `/v1/models` HTTP timeout (秒) |
 
 ---
@@ -93,6 +93,6 @@ irm https://raw.githubusercontent.com/Bear1203/opencode-litellm-0504/main/instal
 | 症狀 | 解法 |
 |---|---|
 | `opencode-litellm` 找不到 | PATH 未生效,**關閉所有 Terminal 重開** |
-| 401 / 403 / 模型清單空 | `opencode-litellm config` 修正 key 或 URL |
+| 401 / 403 / 模型清單空 | `opencode-litellm config` 修正 API Key |
 | `opencode.json` 解析失敗 | sync 為了不破壞既有設定會中止,請修正或刪除該檔後重試 |
 | 看詳細日誌 | `Get-Content -Tail 50 $env:USERPROFILE\.config\opencode\litellm-sync.log` |

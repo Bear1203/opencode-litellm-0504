@@ -7,7 +7,7 @@
 #   LITELLM_BASE_URL       (必填) LiteLLM server URL
 #   LITELLM_API_KEY        (必填) Bearer token,沒給就讀 LITELLM_KEY_FILE
 #   LITELLM_PROVIDER_ID    (預設 litellm)
-#   LITELLM_PROVIDER_NAME  (預設 LiteLLM)
+#   LITELLM_PROVIDER_NAME  (預設 PIC-Litellm)
 #   LITELLM_TIMEOUT        (預設 10) HTTP timeout 秒數
 #   OPENCODE_CONFIG_FILE   (預設 %USERPROFILE%\.config\opencode\opencode.json)
 #   LITELLM_KEY_FILE       (預設 %USERPROFILE%\.config\opencode\litellm-key)
@@ -21,7 +21,7 @@ $ErrorActionPreference = 'Stop'
 $BaseUrl      = if ($env:LITELLM_BASE_URL)     { $env:LITELLM_BASE_URL }     else { '' }
 $ApiKey       = if ($env:LITELLM_API_KEY)      { $env:LITELLM_API_KEY }      else { '' }
 $ProviderId   = if ($env:LITELLM_PROVIDER_ID)  { $env:LITELLM_PROVIDER_ID }  else { 'litellm' }
-$ProviderName = if ($env:LITELLM_PROVIDER_NAME){ $env:LITELLM_PROVIDER_NAME }else { 'LiteLLM' }
+$ProviderName = if ($env:LITELLM_PROVIDER_NAME){ $env:LITELLM_PROVIDER_NAME }else { 'PIC-Litellm' }
 $TimeoutSec   = if ($env:LITELLM_TIMEOUT)      { [int]$env:LITELLM_TIMEOUT } else { 10 }
 
 $OpencodeConfigDir = Join-Path $env:USERPROFILE '.config\opencode'
