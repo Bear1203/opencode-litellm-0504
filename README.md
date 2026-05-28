@@ -15,16 +15,12 @@ Windows / PowerShell 5.1+ 專用,無需 WSL、無需 Python。
 # 1. 安裝 (沒裝 opencode 會自動下載;PATH 自動寫入)
 irm https://raw.githubusercontent.com/Bear1203/opencode-litellm-0504/main/install.ps1 | iex
 
-# 2. 開新的 Terminal 視窗讓 PATH 生效
-
-# 3. 首次啟動,引導你輸入 API key,自動同步模型
+# 2. 首次啟動,引導你輸入 API Key,自動同步模型
 opencode-litellm
 
-# 4. 之後直接用 opencode
+# 3. 之後直接用 opencode
 opencode
 ```
-
-桌面會多一個 `opencode-litellm.bat`,**那是雙擊跑「設定 / 健檢」用的**,不是啟動 opencode 用的。
 
 > 若 PowerShell 執行原則阻擋腳本:`Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` 後再執行 `irm | iex`。
 

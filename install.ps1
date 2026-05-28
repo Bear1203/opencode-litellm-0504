@@ -37,8 +37,6 @@ $CommandsDir = Join-Path $ConfigDir 'commands'
 $CacheDir    = $ConfigDir
 $EnvFile     = Join-Path $ConfigDir 'litellm.env'
 
-$script:PathModified = $false
-
 function Write-Info  { param([string]$Msg) Write-Host "[install] $Msg" }
 function Write-Ok    { param([string]$Msg) Write-Host $Msg -ForegroundColor Green }
 function Write-Warn2 { param([string]$Msg) Write-Host $Msg -ForegroundColor Yellow }
@@ -123,7 +121,6 @@ public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, UIntPtr wP
     } catch { }
 
     $env:PATH = "$env:PATH;$Dir"
-    $script:PathModified = $true
     Write-Ok "已將 $Dir 寫入 User PATH"
 }
 
@@ -247,7 +244,6 @@ function Do-Install {
     Write-Info "  lib       -> $LibDir\opencode-litellm.ps1, litellm-sync.ps1"
     Write-Info "  env       -> $EnvFile"
     Write-Info "  commands  -> $CommandsDir\litellm-{sync,doctor}.md"
-    Write-Info "  desktop   -> opencode-litellm.bat (設定精靈 / 健檢)"
 
     foreach ($d in @($BinDir, $LibDir, $ConfigDir, $CommandsDir, $CacheDir)) {
         if (-not (Test-Path -LiteralPath $d)) {
@@ -269,57 +265,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "$LibDir\opencode-litellm.ps
 "@
     Set-Content -LiteralPath $cmdShim -Value $shimContent -Encoding ASCII
 
-    # 桌面「設定精靈 / 健檢」雙擊啟動器
-    #   - 沒設定過 -> 跑 config 引導輸入
-    #   - 已設定過 -> 跑 doctor 顯示狀態
-    #   - 結束後 pause,讓視窗停住給使用者看結果
-    # 註解全英文 + 內容純 ASCII,避免 cmd.exe 在 cp950 下亂碼;
-    # chcp 65001 切 console code page 讓子行程 (PowerShell) 印中文正常顯示。
-    $desktopDir = [Environment]::GetFolderPath('Desktop')
-    if ($desktopDir -and (Test-Path -LiteralPath $desktopDir)) {
-        $desktopBat = Join-Path $desktopDir 'opencode-litellm.bat'
-        if (-not (Test-Path -LiteralPath $desktopBat)) {
-            $keyFile = Join-Path $ConfigDir 'litellm-key'
-            $batLines = @(
-                '@echo off',
-                'REM opencode-litellm desktop launcher (setup wizard / health check).',
-                'REM Double-click to configure on first run, or to verify your setup later.',
-                'REM To actually USE opencode, open a Terminal and just type: opencode',
-                '',
-                'chcp 65001 >nul',
-                '',
-                "set ""LITELLM_PS1=$LibDir\opencode-litellm.ps1""",
-                "set ""LITELLM_KEY_FILE=$keyFile""",
-                '',
-                'if not exist "%LITELLM_PS1%" (',
-                '    echo [opencode-litellm] ERROR: cannot find "%LITELLM_PS1%"',
-                '    echo Please reinstall:',
-                '    echo   irm https://raw.githubusercontent.com/Bear1203/opencode-litellm-0504/main/install.ps1 ^| iex',
-                '    pause',
-                '    exit /b 1',
-                ')',
-                '',
-                'if exist "%LITELLM_KEY_FILE%" (',
-                '    echo [opencode-litellm] Existing setup detected, running doctor...',
-                '    powershell -NoProfile -ExecutionPolicy Bypass -File "%LITELLM_PS1%" doctor',
-                ') else (',
-                '    echo [opencode-litellm] First-time setup, running config wizard...',
-                '    powershell -NoProfile -ExecutionPolicy Bypass -File "%LITELLM_PS1%" config',
-                ')',
-                '',
-                'echo.',
-                'echo --------------------------------------------------------------',
-                'echo  Done. To start opencode, open a Terminal and run:  opencode',
-                'echo --------------------------------------------------------------',
-                'pause'
-            )
-            Set-Content -LiteralPath $desktopBat -Value $batLines -Encoding ASCII
-            Write-Info "已建立桌面設定精靈: $desktopBat"
-        } else {
-            Write-Info "保留既有桌面啟動器: $desktopBat"
-        }
-    }
-
     # env 檔: 已存在就不覆蓋
     if (Test-Path -LiteralPath $EnvFile) {
         Write-Info "保留既有 $EnvFile"
@@ -333,13 +278,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "$LibDir\opencode-litellm.ps
     Write-Ok "安裝完成 (version $Version)"
     Write-Ok "  進入點: $BinDir\opencode-litellm.cmd"
     Write-Host ''
-
-    if ($script:PathModified) {
-        Write-Warn2 '================================================================'
-        Write-Warn2 '  下一步: 請開啟新的 PowerShell / Terminal 視窗 (PATH 已更新)'
-        Write-Warn2 '================================================================'
-        Write-Host ''
-    }
 
     Write-Ok '接下來:'
     Write-Ok '  1) 首次啟動 (會引導輸入 LiteLLM API Key):'
@@ -357,7 +295,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "$LibDir\opencode-litellm.ps
 function Do-Uninstall {
     param([switch]$DoPurge)
 
-    $desktopDir = [Environment]::GetFolderPath('Desktop')
     $files = @(
         (Join-Path $BinDir 'opencode-litellm.cmd'),
         (Join-Path $LibDir 'opencode-litellm.ps1'),
@@ -365,7 +302,6 @@ function Do-Uninstall {
         (Join-Path $CommandsDir 'litellm-sync.md'),
         (Join-Path $CommandsDir 'litellm-doctor.md')
     )
-    if ($desktopDir) { $files += (Join-Path $desktopDir 'opencode-litellm.bat') }
 
     foreach ($f in $files) {
         if (Test-Path -LiteralPath $f) {
