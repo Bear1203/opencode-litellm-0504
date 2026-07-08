@@ -47,6 +47,9 @@ KEY_FILE="$CONFIG_DIR/litellm-key"
 LOG_FILE="$CONFIG_DIR/litellm-sync.log"
 PATH_BIN="$HOME/.local/bin"
 PATH_LINK="$PATH_BIN/opencode-litellm"
+# opencode 官方安裝腳本會把本體裝到這;它有時不會 (或寫錯檔) 把此路徑加進 PATH,
+# 我們在 ensure_path 一併補強,避免使用者裝完打 opencode 沒反應。
+OPENCODE_BIN="$HOME/.opencode/bin"
 
 c_reset=$'\033[0m'; c_green=$'\033[32m'; c_yellow=$'\033[33m'; c_red=$'\033[31m'
 info()  { printf '[install] %s\n' "$1"; }
@@ -112,25 +115,37 @@ ensure_jq() {
     fi
 }
 
-ensure_path() {
-    # 確保 ~/.local/bin 在 PATH。已在就跳過,否則寫進 shell profile。
+# 確保單一目錄在 PATH。已在當前 PATH 就跳過;否則寫進 shell profile
+# (.zshrc 一定寫,bash 系存在才寫)。needle 用相對片段判斷是否已寫過,
+# 才能比對到官方腳本寫的字面 $HOME/... 行,避免重複追加。
+add_dir_to_profiles() {
+    local dir="$1" tag="$2" needle="$3" f line
     case ":$PATH:" in
-        *":$PATH_BIN:"*) info "PATH 已含 $PATH_BIN,跳過"; return 0 ;;
+        *":$dir:"*) info "PATH 已含 $dir,跳過"; return 0 ;;
     esac
-    local line="export PATH=\"$PATH_BIN:\$PATH\""
-    local touched=0 f
+    line="export PATH=\"$dir:\$PATH\""
     for f in "$HOME/.zshrc" "$HOME/.bash_profile" "$HOME/.bashrc"; do
-        # .zshrc 一定寫 (macOS 預設 zsh);其餘存在才追加,避免無謂建檔
         if [ "$f" = "$HOME/.zshrc" ] || [ -f "$f" ]; then
-            if [ ! -f "$f" ] || ! grep -qF "$PATH_BIN" "$f" 2>/dev/null; then
-                printf '\n# opencode-litellm\n%s\n' "$line" >>"$f"
-                info "已將 PATH 寫入 $f"
+            if [ ! -f "$f" ] || ! grep -qF "$needle" "$f" 2>/dev/null; then
+                printf '\n# %s\n%s\n' "$tag" "$line" >>"$f"
+                info "已將 $dir 寫入 $f"
+                PATH_CHANGED=1
             fi
-            touched=1
         fi
     done
-    [ "$touched" -eq 1 ] && warn2 "PATH 已更新,請重開終端機或執行: source ~/.zshrc"
-    export PATH="$PATH_BIN:$PATH"
+    export PATH="$dir:$PATH"
+}
+
+ensure_path() {
+    PATH_CHANGED=0
+    # 我們的 wrapper (opencode-litellm)
+    add_dir_to_profiles "$PATH_BIN"    'opencode-litellm'   '.local/bin'
+    # opencode 本體: 官方安裝腳本有時不會 (或寫錯檔) 把它加進 PATH,這裡補強
+    if [ -x "$OPENCODE_BIN/opencode" ]; then
+        add_dir_to_profiles "$OPENCODE_BIN" 'opencode (本體 PATH)' '.opencode/bin'
+    fi
+    [ "$PATH_CHANGED" = '1' ] && warn2 "PATH 已更新,請重開終端機或執行: source ~/.zshrc"
+    return 0
 }
 
 do_install() {
