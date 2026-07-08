@@ -14,3 +14,6 @@ litellm.env
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Claude Code 本地指引,不進 repo
+CLAUDE.md
