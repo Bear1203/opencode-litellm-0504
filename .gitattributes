@@ -1,0 +1,7 @@
+# macOS 執行的 bash 腳本必須是 LF 行尾,否則 shebang 會帶著 \r 導致無法執行。
+# 無論使用者的 core.autocrlf 設定為何,強制以下副檔名一律 LF。
+*.sh   text eol=lf
+*.env  text eol=lf
+
+# Windows PowerShell 腳本維持 CRLF
+*.ps1  text eol=crlf
